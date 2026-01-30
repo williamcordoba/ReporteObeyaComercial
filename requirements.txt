@@ -32,3 +32,13 @@ pathlib  # Incluido en Python 3.4+
 # Opcional: Para mejorar performance
 # openpyxl>=3.1.0  # Si exportas a Excel
 # xlsxwriter>=3.1.0  # Alternativa para Excel
+
+streamlit==1.28.0
+pandas==2.1.0
+plotly==5.17.0
+folium==0.14.0
+geopandas==0.14.0
+shapely==2.0.1
+streamlit-folium==0.15.0
+numpy==1.24.3
+sqlite3
