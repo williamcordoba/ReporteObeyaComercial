@@ -50,7 +50,7 @@ CHART_COLORS = ['#1e3c72', '#2a5298', '#7fa8e0', '#5080c0', '#3060a0', '#406db8'
 # CONFIGURACIÓN DE RUTAS
 # ==========================
 import os
-CSV_PATH      = os.environ.get('CSV_PATH', 'data.csv')
+CSV_PATH      = os.environ.get('CSV_PATH', 'data/data.csv')
 GEOJSON_PATH  = os.environ.get('GEODATA_PATH', 'geodata')
 
 # ==========================
@@ -120,7 +120,10 @@ def parse_num(series):
 @st.cache_data(ttl=600, show_spinner=False)
 def load_csv():
     try:
-        df = pd.read_csv(CSV_PATH, encoding='utf-8-sig')
+        # CORREGIDO: Usar punto y coma como separador
+        df = pd.read_csv(CSV_PATH, encoding='utf-8-sig', sep=';')
+        
+        # Limpiar nombres de columnas
         df.columns = (
             df.columns
             .str.strip()
@@ -128,47 +131,58 @@ def load_csv():
             .str.replace(' ', '_', regex=False)
         )
 
-        # Renombres de conveniencia
+        # Renombres de conveniencia - NUEVA ESTRUCTURA
         rename = {
-            'NOM_CCOSTO':          'ALMACEN',
-            'NOM_OFICIO':          'NOM_OFICIO',
-            '#ACTIVOS':            'TOTAL_ACTIVOS',
-            'AÑO':                 'AÑO',
-            'RETIROS':             'RETIROS',
-            'AUS_TOTAL':           'TOTAL_AUSENTISMO',
-            '#ACCIDENTES':         'TOTAL_ACCIDENTES',
-            'AUS_MEDICO':          'AUS_MEDICO',
-            'AUS_LEGAL':           'AUS_LEGAL',
-            'AUS_ADMINISTRATIVO':  'AUS_ADMINISTRATIVO',
-            '#DIAS_ADMINISTRATIVO':'DIAS_ADMIN',
-            '#DIAS_LEGAL':         'DIAS_LEGAL',
-            '#DIAS_MEDICO':        'DIAS_MEDICO',
-            'DIAS_AUSENCIA':       'DIAS_AUSENCIA',
-            '#HORAS_AUSENTISMO':   'HORAS_AUSENTISMO',
-            '#HORAS':              'HORAS_TRABAJADAS',
-            'RANGOS_DE_PERMANENCIA': 'RANGO_PERMANENCIA'
+            'NOM_CCOSTO':              'ALMACEN',
+            'NOM_OFICIO':              'NOM_OFICIO',
+            'ACTIVOS':                 'TOTAL_ACTIVOS',
+            'AÑO':                     'AÑO',
+            'RETIROS':                 'RETIROS',
+            'CONT_TOTAL':              'TOTAL_AUSENTISMO',
+            'ACCIDENTES':              'TOTAL_ACCIDENTES',
+            'COLOR_AUS_MED':           'COLOR_AUS_MED',
+            'CONT_AUS_LEG':            'AUS_LEG',
+            'CONT_AUS_ADM':            'AUS_ADMINISTRATIVO',
+            'DIAS_ADMINISTRATIVO':     'DIAS_ADMIN',
+            'DIAS_LEGAL':              'DIAS_LEGAL',
+            'DIAS_MEDICO':             'DIAS_MEDICO',
+            'DIAS_AUSENCIA':           'DIAS_AUSENCIA',
+            'HORAS_AUSENTISMO':        'HORAS_AUSENTISMO',
+            'HORAS':                   'HORAS_TRABAJADAS',
+            'RANGOS_DE_PERMANENCIA':   'RANGO_PERMANENCIA',
+            'TASA_ROTACION_MENSUAL_ACUM': 'TASA_ROTACION_MENSUAL',
         }
         df.rename(columns={k: v for k, v in rename.items() if k in df.columns}, inplace=True)
 
         # Coordenadas (formato europeo con coma decimal)
         for col in ['LATITUD', 'LONGITUD']:
-            df[col] = df[col].astype(str).str.replace(',', '.', regex=False)
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.replace(',', '.', regex=False)
+                df[col] = pd.to_numeric(df[col], errors='coerce')
 
         # Tasas almacenadas como texto
-        df['TASA_ROTACION_MENSUAL']     = parse_pct(df['TASA_ROTACION_MENSUAL'])
-        df['TASA_ROTACION_ACT_MES_ANT'] = parse_pct(df['TASA_ROTACION_ACT_MES_ANT'])
-        df['TASA_DE_ACCIDENTALIDAD']    = parse_pct(df['TASA_DE_ACCIDENTALIDAD'])
-        df['HORAS_TRABAJADAS']          = parse_num(df['HORAS_TRABAJADAS'])
+        if 'TASA_ROTACION_MENSUAL' in df.columns:
+            df['TASA_ROTACION_MENSUAL'] = parse_pct(df['TASA_ROTACION_MENSUAL'])
+        if 'TASA_ROTACION_ACT_MES_ANT' in df.columns:
+            df['TASA_ROTACION_ACT_MES_ANT'] = parse_pct(df['TASA_ROTACION_ACT_MES_ANT'])
+        if 'TASA_DE_ACCIDENTALIDAD' in df.columns:
+            df['TASA_DE_ACCIDENTALIDAD'] = parse_pct(df['TASA_DE_ACCIDENTALIDAD'])
+        if 'HORAS_TRABAJADAS' in df.columns:
+            df['HORAS_TRABAJADAS'] = parse_num(df['HORAS_TRABAJADAS'])
 
-        # Numéricas directas - CORREGIDO: mejor manejo de tipos
+        # Numéricas directas
         for col in ['TOTAL_ACTIVOS', 'RETIROS', 'TOTAL_AUSENTISMO', 'TOTAL_ACCIDENTES',
-                    'AUS_MEDICO', 'AUS_LEGAL', 'AUS_ADMINISTRATIVO',
+                    'AUS_LEG', 'AUS_ADMINISTRATIVO',
                     'DIAS_ADMIN', 'DIAS_LEGAL', 'DIAS_MEDICO', 'DIAS_AUSENCIA', 'HORAS_AUSENTISMO']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
                 df[col] = df[col].fillna(0)
 
+        # AUS_MEDICO viene como COLOR_AUS_MED (es un indicador visual), lo convertimos a 0/1
+        if 'COLOR_AUS_MED' in df.columns:
+            # Si tiene color diferente a un valor base, consideramos que tiene ausentismo
+            df['AUS_MEDICO'] = df['COLOR_AUS_MED'].apply(lambda x: 1 if str(x) != '#37A794' and pd.notna(x) else 0)
+        
         df['AÑO'] = pd.to_numeric(df['AÑO'], errors='coerce')
         df['AÑO'] = df['AÑO'].astype('Int64')
         df['MES'] = df['MES'].astype(str).str.strip().str.upper()
@@ -193,8 +207,8 @@ def process_data(df_raw, mes, año):
     if df.empty:
         return df
 
-    # CORREGIDO: Agregar por ALMACEN/CCOSTO manteniendo ZONA y coordenadas
-    group_cols = [c for c in ['ALMACEN', 'CCOSTO', 'ZONA', 'LATITUD', 'LONGITUD', 'MES', 'AÑO']
+    # Agregar por ALMACEN manteniendo ZONA y coordenadas
+    group_cols = [c for c in ['ALMACEN', 'ZONA', 'LATITUD', 'LONGITUD', 'MES', 'AÑO']
                   if c in df.columns]
 
     agg_dict = {
@@ -203,7 +217,7 @@ def process_data(df_raw, mes, año):
         'TOTAL_AUSENTISMO':         ('TOTAL_AUSENTISMO',        'sum'),
         'TOTAL_ACCIDENTES':         ('TOTAL_ACCIDENTES',        'sum'),
         'AUS_MEDICO':               ('AUS_MEDICO',              'sum'),
-        'AUS_LEGAL':                ('AUS_LEGAL',               'sum'),
+        'AUS_LEG':                  ('AUS_LEG',                 'sum'),
         'AUS_ADMINISTRATIVO':       ('AUS_ADMINISTRATIVO',      'sum'),
         'DIAS_AUSENCIA':            ('DIAS_AUSENCIA',           'sum'),
         'DIAS_ADMIN':               ('DIAS_ADMIN',              'sum'),
@@ -230,7 +244,6 @@ def process_data(df_raw, mes, año):
 
     df['FECHA'] = df['MES'].map(MES_ORDEN).astype(str) + '/' + df['AÑO'].astype(str)
     
-    # NO eliminar filas sin coordenadas aquí, solo en el mapa
     return df
 
 
@@ -315,7 +328,7 @@ with st.sidebar:
     zonas   = ['TODAS'] + sorted(df['ZONA'].dropna().unique().tolist())
     zona_sel = st.selectbox("🌍 Zona", zonas, key="zona_select")
     
-    # NUEVO: Filtro de tiendas
+    # Filtro de tiendas
     st.markdown("#### 🏪 Filtro de Tiendas")
     tiendas = ['TODAS'] + sorted(df['ALMACEN'].dropna().unique().tolist())
     tienda_sel = st.selectbox("Tienda/CCosto", tiendas, key="tienda_select")
@@ -377,7 +390,7 @@ df_f = df_zona.copy()
 if zona_sel != 'TODAS' and zona_seleccionada == "TODAS":
     df_f = df_f[df_f['ZONA'] == zona_sel]
 
-# NUEVO: Filtro de tienda
+# Filtro de tienda
 if tienda_sel != 'TODAS':
     df_f = df_f[df_f['ALMACEN'] == tienda_sel]
 
@@ -398,7 +411,6 @@ if df_f.empty:
 st.markdown("### 📈 Indicadores Clave de Desempeño")
 k1, k2, k3, k4, k5, k6 = st.columns(6)
 
-# CORREGIDO: Asegurar que se sumen correctamente los activos
 total_act  = int(df_f['TOTAL_ACTIVOS'].sum())
 total_ret  = int(df_f['RETIROS'].sum())
 total_aus  = int(df_f['TOTAL_AUSENTISMO'].sum())
@@ -540,8 +552,8 @@ with tab3:
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("🏥 Médico",       f"{int(df_f['AUS_MEDICO'].sum()):,}",
               f"{df_f['AUS_MEDICO'].sum()/max(df_f['TOTAL_AUSENTISMO'].sum(),1)*100:.0f}%")
-    k2.metric("⚖️ Legal",        f"{int(df_f['AUS_LEGAL'].sum()):,}",
-              f"{df_f['AUS_LEGAL'].sum()/max(df_f['TOTAL_AUSENTISMO'].sum(),1)*100:.0f}%")
+    k2.metric("⚖️ Legal",        f"{int(df_f['AUS_LEG'].sum()):,}",
+              f"{df_f['AUS_LEG'].sum()/max(df_f['TOTAL_AUSENTISMO'].sum(),1)*100:.0f}%")
     k3.metric("🗂️ Administrativo",f"{int(df_f['AUS_ADMINISTRATIVO'].sum()):,}",
               f"{df_f['AUS_ADMINISTRATIVO'].sum()/max(df_f['TOTAL_AUSENTISMO'].sum(),1)*100:.0f}%")
     k4.metric("📅 Días totales", f"{int(df_f['DIAS_AUSENCIA'].sum()):,}")
@@ -551,7 +563,7 @@ with tab3:
     with c1:
         top_aus = df_f.nlargest(15, 'TASA_AUSENTISMO')[
             ['ALMACEN','ZONA','TOTAL_ACTIVOS','TOTAL_AUSENTISMO',
-             'AUS_MEDICO','AUS_LEGAL','AUS_ADMINISTRATIVO',
+             'AUS_MEDICO','AUS_LEG','AUS_ADMINISTRATIVO',
              'DIAS_AUSENCIA','HORAS_AUSENTISMO','TASA_AUSENTISMO']
         ].copy()
 
@@ -566,7 +578,7 @@ with tab3:
                 colorscale=[[0, '#fff3cd'], [1, COLORS['warning']]]
             ),
             customdata=top_aus[['TOTAL_ACTIVOS','TOTAL_AUSENTISMO','ZONA',
-                                  'AUS_MEDICO','AUS_LEGAL','AUS_ADMINISTRATIVO',
+                                  'AUS_MEDICO','AUS_LEG','AUS_ADMINISTRATIVO',
                                   'DIAS_AUSENCIA','HORAS_AUSENTISMO']],
             hovertemplate=(
                 '<b>%{y}</b><br>'
@@ -592,13 +604,13 @@ with tab3:
         # Composición ausentismo por zona
         zona_aus = df_f.groupby('ZONA').agg(
             AUS_MEDICO=('AUS_MEDICO','sum'),
-            AUS_LEGAL=('AUS_LEGAL','sum'),
+            AUS_LEG=('AUS_LEG','sum'),
             AUS_ADMINISTRATIVO=('AUS_ADMINISTRATIVO','sum'),
         ).reset_index()
 
         fig2 = go.Figure()
         fig2.add_trace(go.Bar(name='🏥 Médico',        x=zona_aus['ZONA'], y=zona_aus['AUS_MEDICO'],        marker_color=COLORS['aus_medico']))
-        fig2.add_trace(go.Bar(name='⚖️ Legal',         x=zona_aus['ZONA'], y=zona_aus['AUS_LEGAL'],         marker_color=COLORS['aus_legal']))
+        fig2.add_trace(go.Bar(name='⚖️ Legal',         x=zona_aus['ZONA'], y=zona_aus['AUS_LEG'],         marker_color=COLORS['aus_legal']))
         fig2.add_trace(go.Bar(name='🗂️ Administrativo',x=zona_aus['ZONA'], y=zona_aus['AUS_ADMINISTRATIVO'],marker_color=COLORS['aus_admin']))
         fig2.update_layout(
             title='Composición del Ausentismo por Zona',
@@ -615,7 +627,7 @@ with tab3:
         st.metric("⏱️ Horas totales", f"{int(df_f['HORAS_AUSENTISMO'].sum()):,}")
 
         # Pie ausentismo por tipo
-        vals = [df_f['AUS_MEDICO'].sum(), df_f['AUS_LEGAL'].sum(), df_f['AUS_ADMINISTRATIVO'].sum()]
+        vals = [df_f['AUS_MEDICO'].sum(), df_f['AUS_LEG'].sum(), df_f['AUS_ADMINISTRATIVO'].sum()]
         lbs  = ['Médico', 'Legal', 'Admin']
         fig_pie = go.Figure(go.Pie(labels=lbs, values=vals,
                                     marker_colors=[COLORS['aus_medico'], COLORS['aus_legal'], COLORS['aus_admin']],
@@ -709,10 +721,10 @@ with tab5:
             df_trend[col] = parse_pct(df_trend[col])
 
     trend = df_trend.groupby(['MES','AÑO']).agg(
-        TOTAL_ACTIVOS=('#ACTIVOS' if '#ACTIVOS' in df_trend.columns else 'TOTAL_ACTIVOS', 'sum') if 'TOTAL_ACTIVOS' not in df_trend.columns else ('TOTAL_ACTIVOS','sum'),
-        RETIROS=('RETIROS','sum') if 'RETIROS' in df_trend.columns else ('RETIROS','sum'),
-        TOTAL_AUSENTISMO=('AUS_TOTAL','sum') if 'AUS_TOTAL' in df_trend.columns else ('TOTAL_AUSENTISMO','sum'),
-        TOTAL_ACCIDENTES=('#ACCIDENTES','sum') if '#ACCIDENTES' in df_trend.columns else ('TOTAL_ACCIDENTES','sum'),
+        TOTAL_ACTIVOS=('TOTAL_ACTIVOS','sum'),
+        RETIROS=('RETIROS','sum'),
+        TOTAL_AUSENTISMO=('TOTAL_AUSENTISMO','sum'),
+        TOTAL_ACCIDENTES=('TOTAL_ACCIDENTES','sum'),
     ).reset_index()
     trend['MES_NUM'] = trend['MES'].map(MES_ORDEN).fillna(0)
     trend = trend.sort_values(['AÑO','MES_NUM'])
@@ -774,7 +786,7 @@ if not df_oficio.empty and 'NOM_OFICIO' in df_oficio.columns:
         'TOTAL_ACCIDENTES': 'sum'
     }).reset_index()
     
-    # CORREGIDO: Filtrar solo cargos con activos > 0
+    # Filtrar solo cargos con activos > 0
     cargo_agg = cargo_agg[cargo_agg['TOTAL_ACTIVOS'] > 0]
     
     cargo_agg['TASA_ROTACION'] = (cargo_agg['RETIROS'] / cargo_agg['TOTAL_ACTIVOS'].clip(lower=1) * 100).fillna(0)
@@ -812,7 +824,7 @@ if not df_oficio.empty and 'NOM_OFICIO' in df_oficio.columns:
         st.plotly_chart(fig_cargo, use_container_width=True)
     
     with c2:
-        # NUEVO: Navegación entre variables para distribución
+        # Navegación entre variables para distribución
         st.markdown("#### 📊 Distribución por Variable")
         variable_sel = st.selectbox(
             "Seleccionar variable:",
@@ -874,7 +886,7 @@ if not df_oficio.empty and 'NOM_OFICIO' in df_oficio.columns:
 st.markdown("---")
 
 # ==========================
-# TASAS POR ZONA (CAMBIADO: antes era por CCOSTO)
+# TASAS POR ZONA
 # ==========================
 st.markdown("### 📊 Comparación de Tasas por Zona")
 
@@ -933,7 +945,7 @@ st.plotly_chart(fig_zonas, use_container_width=True)
 st.markdown("---")
 
 # ==========================
-# RETIROS POR RANGO DE PERMANENCIA (MODIFICADO)
+# RETIROS POR RANGO DE PERMANENCIA
 # ==========================
 st.markdown("### 🔄 Retiros por Rango de Permanencia")
 st.caption("*Solo se incluyen registros donde RETIROS >= 1*")
@@ -989,7 +1001,7 @@ if not df_retiros.empty and 'RANGO_PERMANENCIA' in df_retiros.columns:
     )
     st.plotly_chart(fig_rango, use_container_width=True)
     
-    # Análisis por cargo y rango de permanencia (MEJORADO)
+    # Análisis por cargo y rango de permanencia
     st.markdown("#### 👔 Top 10 Cargos con Más Retiros por Rango de Permanencia")
     rango_cargo = df_retiros.groupby(['NOM_OFICIO', 'RANGO_PERMANENCIA']).agg({
         'RETIROS': 'sum'
@@ -1061,7 +1073,7 @@ st.markdown("---")
 # ==========================
 st.markdown("### 🗺️ Vista Geográfica")
 
-# CORREGIDO: Filtrar solo datos con coordenadas válidas para el mapa
+# Filtrar solo datos con coordenadas válidas para el mapa
 df_map_full = df_f.copy()
 df_map = df_map_full.dropna(subset=['LATITUD', 'LONGITUD'])
 
@@ -1148,7 +1160,7 @@ else:
                     <tr><td>🚪 Retiros:</td>  <td><b>{int(row['RETIROS'])} ({row['TASA_ROTACION']:.1f}%)</b></td></tr>
                     <tr><td>😷 Ausentismo:</td><td><b>{int(row['TOTAL_AUSENTISMO'])} ({row['TASA_AUSENTISMO']:.1f}%)</b></td></tr>
                     <tr><td>  ↳ Médico:</td>  <td>{int(row.get('AUS_MEDICO',0))}</td></tr>
-                    <tr><td>  ↳ Legal:</td>   <td>{int(row.get('AUS_LEGAL',0))}</td></tr>
+                    <tr><td>  ↳ Legal:</td>   <td>{int(row.get('AUS_LEG',0))}</td></tr>
                     <tr><td>  ↳ Admin:</td>   <td>{int(row.get('AUS_ADMINISTRATIVO',0))}</td></tr>
                     <tr><td>📅 Días aus.:</td> <td><b>{int(row.get('DIAS_AUSENCIA',0))}</b></td></tr>
                     <tr><td>⏱️ Horas aus.:</td><td><b>{int(row.get('HORAS_AUSENTISMO',0))}</b></td></tr>
@@ -1178,14 +1190,14 @@ st.markdown("### 📋 Datos Detallados por Tienda")
 
 all_cols = [
     'ALMACEN','ZONA','TOTAL_ACTIVOS','RETIROS','TOTAL_AUSENTISMO',
-    'AUS_MEDICO','AUS_LEGAL','AUS_ADMINISTRATIVO',
+    'AUS_MEDICO','AUS_LEG','AUS_ADMINISTRATIVO',
     'DIAS_AUSENCIA','HORAS_AUSENTISMO',
     'TOTAL_ACCIDENTES','TASA_ROTACION','TASA_AUSENTISMO','TASA_ACCIDENTALIDAD',
     'TASA_ROTACION_MENSUAL','TASA_ROTACION_ACT_MES_ANT','FECHA'
 ]
 existing_cols = [c for c in all_cols if c in df_f.columns]
 default_cols  = [c for c in ['ALMACEN','ZONA','TOTAL_ACTIVOS','RETIROS',
-                              'TOTAL_AUSENTISMO','AUS_MEDICO','AUS_LEGAL',
+                              'TOTAL_AUSENTISMO','AUS_MEDICO','AUS_LEG',
                               'AUS_ADMINISTRATIVO','DIAS_AUSENCIA','TOTAL_ACCIDENTES']
                  if c in existing_cols]
 
@@ -1213,7 +1225,7 @@ if mostrar_cols:
         "RETIROS":               st.column_config.NumberColumn("🚪 Retiros",       format="%d"),
         "TOTAL_AUSENTISMO":      st.column_config.NumberColumn("😷 Aus. Total",    format="%d"),
         "AUS_MEDICO":            st.column_config.NumberColumn("🏥 Médico",        format="%d"),
-        "AUS_LEGAL":             st.column_config.NumberColumn("⚖️ Legal",         format="%d"),
+        "AUS_LEG":               st.column_config.NumberColumn("⚖️ Legal",         format="%d"),
         "AUS_ADMINISTRATIVO":    st.column_config.NumberColumn("🗂️ Admin",         format="%d"),
         "DIAS_AUSENCIA":         st.column_config.NumberColumn("📅 Días",          format="%d"),
         "HORAS_AUSENTISMO":      st.column_config.NumberColumn("⏱️ Horas",         format="%.0f"),
