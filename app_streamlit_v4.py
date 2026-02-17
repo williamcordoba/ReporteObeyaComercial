@@ -704,7 +704,7 @@ st.markdown("---")
 # ==========================
 # ANÁLISIS POR OFICIO
 # ==========================
-st.markdown("### 👔 Análisis por Cargo (NOM_OFICIO)")
+st.markdown("### 👔 Análisis por Cargo")
 
 df_oficio = df_raw[(df_raw['MES'] == mes) & (df_raw['AÑO'] == año)].copy()
 if zona_seleccionada != "TODAS":
