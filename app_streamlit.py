@@ -50,7 +50,7 @@ CHART_COLORS = ['#1e3c72', '#2a5298', '#7fa8e0', '#5080c0', '#3060a0', '#406db8'
 # CONFIGURACIÓN DE RUTAS
 # ==========================
 import os
-CSV_PATH      = os.environ.get('CSV_PATH', 'data.csv')
+CSV_PATH      = os.environ.get('CSV_PATH', 'data/data.csv')
 GEOJSON_PATH  = os.environ.get('GEODATA_PATH', 'geodata')
 
 # ==========================
@@ -79,35 +79,6 @@ st.markdown("""
         padding: 15px;
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .zona-btn {
-        padding: 10px 20px;
-        border-radius: 8px;
-        border: 2px solid #1e3c72;
-        background: white;
-        color: #1e3c72;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s;
-        text-align: center;
-    }
-    .zona-btn:hover {
-        background: #1e3c72;
-        color: white;
-    }
-    .zona-btn.active {
-        background: #1e3c72;
-        color: white;
-    }
-    .zona-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        justify-content: center;
-        margin-bottom: 20px;
-    }
-    div[data-testid="stVerticalBlock"] > div > div:has(> .zona-btn) {
-        gap: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -190,14 +161,16 @@ def load_csv():
         df['TASA_DE_ACCIDENTALIDAD']    = parse_pct(df['TASA_DE_ACCIDENTALIDAD'])
         df['HORAS_TRABAJADAS']          = parse_num(df['HORAS_TRABAJADAS'])
 
-        # Numéricas directas
+        # Numéricas directas - CORREGIDO: mejor manejo de tipos
         for col in ['TOTAL_ACTIVOS', 'RETIROS', 'TOTAL_AUSENTISMO', 'TOTAL_ACCIDENTES',
                     'AUS_MEDICO', 'AUS_LEGAL', 'AUS_ADMINISTRATIVO',
                     'DIAS_ADMIN', 'DIAS_LEGAL', 'DIAS_MEDICO', 'DIAS_AUSENCIA', 'HORAS_AUSENTISMO']:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+                df[col] = df[col].fillna(0)
 
-        df['AÑO'] = pd.to_numeric(df['AÑO'], errors='coerce').astype('Int64')
+        df['AÑO'] = pd.to_numeric(df['AÑO'], errors='coerce')
+        df['AÑO'] = df['AÑO'].astype('Int64')
         df['MES'] = df['MES'].astype(str).str.strip().str.upper()
 
         if 'RANGO_PERMANENCIA' in df.columns:
@@ -220,6 +193,7 @@ def process_data(df_raw, mes, año):
     if df.empty:
         return df
 
+    # CORREGIDO: Agregar por ALMACEN/CCOSTO manteniendo ZONA y coordenadas
     group_cols = [c for c in ['ALMACEN', 'CCOSTO', 'ZONA', 'LATITUD', 'LONGITUD', 'MES', 'AÑO']
                   if c in df.columns]
 
@@ -245,13 +219,18 @@ def process_data(df_raw, mes, año):
 
     df = df.groupby(group_cols, dropna=False).agg(**agg_dict).reset_index()
 
+    # Calcular tasas
     activos = df['TOTAL_ACTIVOS'].clip(lower=1)
-    df['TASA_ROTACION']      = (df['RETIROS']    / activos * 100).fillna(0)
-    df['TASA_AUSENTISMO']    = (df['TOTAL_AUSENTISMO'] / activos * 100).fillna(0)
-    df['TASA_ACCIDENTALIDAD']= (df['TOTAL_ACCIDENTES'] / activos * 100).fillna(0)
+    df['TASA_ROTACION']      = (df['RETIROS'] / activos * 100)
+    df['TASA_ROTACION']      = df['TASA_ROTACION'].fillna(0)
+    df['TASA_AUSENTISMO']    = (df['TOTAL_AUSENTISMO'] / activos * 100)
+    df['TASA_AUSENTISMO']    = df['TASA_AUSENTISMO'].fillna(0)
+    df['TASA_ACCIDENTALIDAD']= (df['TOTAL_ACCIDENTES'] / activos * 100)
+    df['TASA_ACCIDENTALIDAD']= df['TASA_ACCIDENTALIDAD'].fillna(0)
 
     df['FECHA'] = df['MES'].map(MES_ORDEN).astype(str) + '/' + df['AÑO'].astype(str)
-    df = df.dropna(subset=['LATITUD', 'LONGITUD'])
+    
+    # NO eliminar filas sin coordenadas aquí, solo en el mapa
     return df
 
 
@@ -331,8 +310,15 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("#### 🔍 Filtros Avanzados")
+    
+    # Filtro de zonas
     zonas   = ['TODAS'] + sorted(df['ZONA'].dropna().unique().tolist())
     zona_sel = st.selectbox("🌍 Zona", zonas, key="zona_select")
+    
+    # NUEVO: Filtro de tiendas
+    st.markdown("#### 🏪 Filtro de Tiendas")
+    tiendas = ['TODAS'] + sorted(df['ALMACEN'].dropna().unique().tolist())
+    tienda_sel = st.selectbox("Tienda/CCosto", tiendas, key="tienda_select")
 
     st.markdown("#### 🚨 Filtros de Alerta")
     mostrar_alertas = st.checkbox("🔔 Solo tiendas con alertas", value=False)
@@ -358,14 +344,14 @@ with st.sidebar:
     )
 
 # ==========================
-# BOTONES DE ZONA (NUEVO)
+# BOTONES DE ZONA (PRINCIPAL)
 # ==========================
 zonas_disponibles = sorted(df['ZONA'].dropna().unique().tolist())
 
 st.markdown("### 🌍 Filtrar por Zona")
 st.markdown("*Selecciona una zona para ver el análisis detallado, o deja sin selección para ver la totalidad*")
 
-# Usar radio buttons en lugar de botones para mejor interacción
+# Usar radio buttons para selección de zona
 zona_seleccionada = st.radio(
     "Seleccionar Zona:",
     options=["TODAS"] + zonas_disponibles,
@@ -374,7 +360,7 @@ zona_seleccionada = st.radio(
     key="zona_radio"
 )
 
-# Aplicar filtro de zona
+# Aplicar filtro de zona principal
 if zona_seleccionada != "TODAS":
     df_zona = df[df['ZONA'] == zona_seleccionada].copy()
     st.info(f"📍 Mostrando datos para: **{zona_seleccionada}** ({len(df_zona)} registros)")
@@ -386,14 +372,22 @@ else:
 # APLICAR FILTROS ADICIONALES
 # ==========================
 df_f = df_zona.copy()
-if zona_sel != 'TODAS':
+
+# Filtro de zona del sidebar (filtro adicional)
+if zona_sel != 'TODAS' and zona_seleccionada == "TODAS":
     df_f = df_f[df_f['ZONA'] == zona_sel]
+
+# NUEVO: Filtro de tienda
+if tienda_sel != 'TODAS':
+    df_f = df_f[df_f['ALMACEN'] == tienda_sel]
+
 if mostrar_alertas:
     df_f = df_f[
         (df_f['TASA_ROTACION']      >= umbral_rotacion) |
         (df_f['TASA_AUSENTISMO']    >= umbral_ausentismo) |
         (df_f['TASA_ACCIDENTALIDAD']>= umbral_accidentes)
     ]
+
 if df_f.empty:
     st.warning("⚠️ No hay datos para los filtros seleccionados.")
     st.stop()
@@ -404,6 +398,7 @@ if df_f.empty:
 st.markdown("### 📈 Indicadores Clave de Desempeño")
 k1, k2, k3, k4, k5, k6 = st.columns(6)
 
+# CORREGIDO: Asegurar que se sumen correctamente los activos
 total_act  = int(df_f['TOTAL_ACTIVOS'].sum())
 total_ret  = int(df_f['RETIROS'].sum())
 total_aus  = int(df_f['TOTAL_AUSENTISMO'].sum())
@@ -422,310 +417,7 @@ k6.metric("⏱️ Horas Ausentismo", f"{total_hrs:,}")
 st.markdown("---")
 
 # ==========================
-# NUEVA SECCIÓN: ANÁLISIS POR OFICIO
-# ==========================
-st.markdown("### 👔 Análisis por Cargo (NOM_OFICIO)")
-
-# Obtener datos de oficio del período seleccionado
-df_oficio = df_raw[(df_raw['MES'] == mes) & (df_raw['AÑO'] == año)].copy()
-if zona_seleccionada != "TODAS":
-    df_oficio = df_oficio[df_oficio['ZONA'] == zona_seleccionada]
-
-if not df_oficio.empty and 'NOM_OFICIO' in df_oficio.columns:
-    # Agregar por cargo
-    cargo_agg = df_oficio.groupby('NOM_OFICIO').agg({
-        'TOTAL_ACTIVOS': 'sum',
-        'RETIROS': 'sum',
-        'TOTAL_AUSENTISMO': 'sum',
-        'TOTAL_ACCIDENTES': 'sum'
-    }).reset_index()
-    
-    cargo_agg['TASA_ROTACION'] = (cargo_agg['RETIROS'] / cargo_agg['TOTAL_ACTIVOS'].clip(lower=1) * 100).fillna(0)
-    cargo_agg = cargo_agg.sort_values('TOTAL_ACTIVOS', ascending=False)
-    
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        # Top 15 cargos por activos
-        top_cargo = cargo_agg.nlargest(15, 'TOTAL_ACTIVOS')
-        
-        fig_cargo = go.Figure()
-        fig_cargo.add_trace(go.Bar(
-            y=top_cargo['NOM_OFICIO'],
-            x=top_cargo['TOTAL_ACTIVOS'],
-            orientation='h',
-            text=top_cargo['TOTAL_ACTIVOS'],
-            texttemplate='%{text:,}',
-            textposition='outside',
-            marker=dict(color=COLORS['primary']),
-            hovertemplate='<b>%{y}</b><br>Activos: %{x:,}<extra></extra>'
-        ))
-        fig_cargo.update_layout(
-            title='🏆 Top 15 Cargos por Cantidad de Activos',
-            xaxis_title='Total Activos',
-            yaxis_title='',
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            height=450,
-            margin=dict(l=250)
-        )
-        st.plotly_chart(fig_cargo, use_container_width=True)
-    
-    with c2:
-        # Distribución de activos por cargo (treemap)
-        fig_treemap = px.treemap(
-            cargo_agg.head(20),
-            path=['NOM_OFICIO'],
-            values='TOTAL_ACTIVOS',
-            title='Distribución de Activos por Cargo',
-            color='TOTAL_ACTIVOS',
-            color_continuous_scale=['#7fa8e0', '#1e3c72']
-        )
-        fig_treemap.update_layout(height=450)
-        st.plotly_chart(fig_treemap, use_container_width=True)
-    
-    # Tabla de cargos
-    st.markdown("#### 📋 Detalle de Cargos")
-    cargo_table = cargo_agg.sort_values('TOTAL_ACTIVOS', ascending=False).head(20)
-    st.dataframe(
-        cargo_table.style.format({
-            'TOTAL_ACTIVOS': '{:,.0f}',
-            'RETIROS': '{:,.0f}',
-            'TOTAL_AUSENTISMO': '{:,.0f}',
-            'TOTAL_ACCIDENTES': '{:,.0f}',
-            'TASA_ROTACION': '{:.1f}%'
-        }),
-        use_container_width=True,
-        height=300
-    )
-
-st.markdown("---")
-
-# ==========================
-# NUEVA SECCIÓN: TASAS POR CENTRO DE COSTO
-# ==========================
-st.markdown("### 📊 Tasas por Centro de Costo (NOM_CCOSTO)")
-
-c1, c2 = st.columns(2)
-
-with c1:
-    # Tasas por almacén
-    tasas_ccosto = df_f.groupby('ALMACEN').agg({
-        'TOTAL_ACTIVOS': 'sum',
-        'RETIROS': 'sum',
-        'TOTAL_AUSENTISMO': 'sum',
-        'TOTAL_ACCIDENTES': 'sum'
-    }).reset_index()
-    
-    tasas_ccosto['TASA_ROTACION'] = (tasas_ccosto['RETIROS'] / tasas_ccosto['TOTAL_ACTIVOS'].clip(lower=1) * 100).fillna(0)
-    tasas_ccosto['TASA_AUSENTISMO'] = (tasas_ccosto['TOTAL_AUSENTISMO'] / tasas_ccosto['TOTAL_ACTIVOS'].clip(lower=1) * 100).fillna(0)
-    tasas_ccosto['TASA_ACCIDENTALIDAD'] = (tasas_ccosto['TOTAL_ACCIDENTES'] / tasas_ccosto['TOTAL_ACTIVOS'].clip(lower=1) * 100).fillna(0)
-    
-    # Top 15 por tasa de rotación
-    top_rot_cc = tasas_ccosto.nlargest(15, 'TASA_ROTACION')
-    
-    fig_rot_cc = go.Figure()
-    fig_rot_cc.add_trace(go.Bar(
-        y=top_rot_cc['ALMACEN'],
-        x=top_rot_cc['TASA_ROTACION'],
-        orientation='h',
-        text=top_rot_cc['TASA_ROTACION'].round(1),
-        texttemplate='%{text}%',
-        textposition='outside',
-        marker=dict(color=top_rot_cc['TASA_ROTACION'], colorscale=[[0, COLORS['warning']], [1, COLORS['danger']]]),
-        hovertemplate='<b>%{y}</b><br>Tasa: %{x:.1f}%<extra></extra>'
-    ))
-    fig_rot_cc.update_layout(
-        title='🏪 Top 15 Tiendas - Tasa de Rotación',
-        xaxis_title='Tasa de Rotación (%)',
-        yaxis_title='',
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        height=400,
-        margin=dict(l=200)
-    )
-    st.plotly_chart(fig_rot_cc, use_container_width=True)
-
-with c2:
-    # Comparación de tasas
-    tasas_melted = tasas_ccosto.melt(
-        id_vars=['ALMACEN'],
-        value_vars=['TASA_ROTACION', 'TASA_AUSENTISMO', 'TASA_ACCIDENTALIDAD'],
-        var_name='Tasa',
-        value_name='Porcentaje'
-    )
-    tasas_melted['Tasa'] = tasas_melted['Tasa'].map({
-        'TASA_ROTACION': 'Rotación',
-        'TASA_AUSENTISMO': 'Ausentismo',
-        'TASA_ACCIDENTALIDAD': 'Accidentalidad'
-    })
-    
-    # Top 10 tiendas con mayores tasas
-    top_tasas = tasas_ccosto.nlargest(10, 'TASA_ROTACION')
-    
-    fig_comp = go.Figure()
-    fig_comp.add_trace(go.Bar(
-        name='Rotación %',
-        x=top_tasas['ALMACEN'],
-        y=top_tasas['TASA_ROTACION'],
-        marker_color=COLORS['retiros']
-    ))
-    fig_comp.add_trace(go.Bar(
-        name='Ausentismo %',
-        x=top_tasas['ALMACEN'],
-        y=top_tasas['TASA_AUSENTISMO'],
-        marker_color=COLORS['ausentismo']
-    ))
-    fig_comp.add_trace(go.Bar(
-        name='Accidentalidad %',
-        x=top_tasas['ALMACEN'],
-        y=top_tasas['TASA_ACCIDENTALIDAD'],
-        marker_color=COLORS['accidentes']
-    ))
-    fig_comp.update_layout(
-        title='📈 Comparación de Tasas por Tienda (Top 10 Rotación)',
-        barmode='group',
-        xaxis_tickangle=-45,
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        height=400
-    )
-    st.plotly_chart(fig_comp, use_container_width=True)
-
-st.markdown("---")
-
-# ==========================
-# NUEVA SECCIÓN: RETIROS POR RANGO DE PERMANENCIA
-# ==========================
-st.markdown("### 🔄 Retiros por Rango de Permanencia")
-st.caption("*Solo se incluyen registros donde RETIROS >= 1*")
-
-# Obtener datos con retiros
-df_retiros = df_raw[(df_raw['MES'] == mes) & (df_raw['AÑO'] == año) & (df_raw['RETIROS'] >= 1)].copy()
-
-if zona_seleccionada != "TODAS":
-    df_retiros = df_retiros[df_retiros['ZONA'] == zona_seleccionada]
-
-if not df_retiros.empty and 'RANGO_PERMANENCIA' in df_retiros.columns:
-    # Agrupar por rango de permanencia
-    rango_agg = df_retiros.groupby('RANGO_PERMANENCIA').agg({
-        'RETIROS': 'sum',
-        'TOTAL_ACTIVOS': 'sum',
-        'ALMACEN': 'nunique'
-    }).reset_index()
-    
-    rango_agg.columns = ['Rango de Permanencia', 'Total Retiros', 'Total Activos', 'Num Tiendas']
-    rango_agg = rango_agg.sort_values('Total Retiros', ascending=False)
-    
-    # Ordenar rangos lógicamente
-    orden_rangos = ['0-2 MESES', '2-4 MESES', '4-6 MESES', '6-12 MESES', 
-                    'A1-2 AÑOS', 'A2-3 AÑOS', 'A3-4 AÑOS', 'A4-5 AÑOS', 'A5+ AÑOS']
-    rango_agg['Orden'] = rango_agg['Rango de Permanencia'].map(
-        {r: i for i, r in enumerate(orden_rangos) if r in rango_agg['Rango de Permanencia'].values}
-    )
-    rango_agg = rango_agg.sort_values('Orden', ascending=True).drop('Orden', axis=1)
-    
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        # Gráfico de barras horizontales
-        fig_rango = go.Figure()
-        fig_rango.add_trace(go.Bar(
-            y=rango_agg['Rango de Permanencia'],
-            x=rango_agg['Total Retiros'],
-            orientation='h',
-            text=rango_agg['Total Retiros'],
-            texttemplate='%{text:,}',
-            textposition='outside',
-            marker=dict(
-                color=rango_agg['Total Retiros'],
-                colorscale=[[0, COLORS['accent']], [1, COLORS['danger']]]
-            ),
-            hovertemplate='<b>%{y}</b><br>Retiros: %{x:,}<extra></extra>'
-        ))
-        fig_rango.update_layout(
-            title='📊 Retiros por Rango de Permanencia',
-            xaxis_title='Total Retiros',
-            yaxis_title='Rango de Permanencia',
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            height=400,
-            margin=dict(l=120)
-        )
-        st.plotly_chart(fig_rango, use_container_width=True)
-    
-    with c2:
-        # Gráfico de dona
-        if not rango_agg.empty:
-            fig_dona = go.Figure(go.Pie(
-                labels=rango_agg['Rango de Permanencia'],
-                values=rango_agg['Total Retiros'],
-                hole=0.5,
-                marker=dict(colors=CHART_COLORS),
-                textinfo='label+percent',
-                hovertemplate='<b>%{label}</b><br>Retiros: %{value:,}<br>(%{percent})<extra></extra>'
-            ))
-            fig_dona.update_layout(
-                title='🥧 Distribución de Retiros por Permanencia',
-                height=400,
-                showlegend=True,
-                legend=dict(orientation="v", yanchor="middle", y=0.5)
-            )
-            st.plotly_chart(fig_dona, use_container_width=True)
-    
-    # Tabla detallada
-    st.markdown("#### 📋 Detalle de Retiros por Permanencia")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Retiros", f"{int(rango_agg['Total Retiros'].sum()):,}")
-    with col2:
-        st.metric("Rango Mayor Riesgo", rango_agg.iloc[0]['Rango de Permanencia'] if len(rango_agg) > 0 else "N/A")
-    with col3:
-        st.metric("Retiros Mayor Rango", f"{int(rango_agg['Total Retiros'].max()):,}" if len(rango_agg) > 0 else "0")
-    with col4:
-        st.metric("Tiendas Afectadas", f"{rango_agg['Num Tiendas'].sum()}")
-    
-    st.dataframe(
-        rango_agg.style.format({'Total Retiros': '{:,.0f}', 'Total Activos': '{:,.0f}', 'Num Tiendas': '{:,.0f}'}),
-        use_container_width=True,
-        height=250
-    )
-    
-    # Análisis por cargo y rango de permanencia
-    st.markdown("#### 👔 Retiros por Cargo y Permanencia")
-    rango_cargo = df_retiros.groupby(['NOM_OFICIO', 'RANGO_PERMANENCIA']).agg({
-        'RETIROS': 'sum'
-    }).reset_index()
-    
-    if not rango_cargo.empty:
-        top_cargos_retiro = rango_cargo.groupby('NOM_OFICIO')['RETIROS'].sum().nlargest(10).index
-        rango_cargo_top = rango_cargo[rango_cargo['NOM_OFICIO'].isin(top_cargos_retiro)]
-        
-        fig_rango_cargo = px.bar(
-            rango_cargo_top,
-            x='NOM_OFICIO',
-            y='RETIROS',
-            color='RANGO_PERMANENCIA',
-            title='Top 10 Cargos con Más Retiros por Rango de Permanencia',
-            color_discrete_sequence=CHART_COLORS,
-            barmode='stack'
-        )
-        fig_rango_cargo.update_layout(
-            xaxis_title='Cargo',
-            yaxis_title='Retiros',
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            height=400,
-            xaxis_tickangle=-45
-        )
-        st.plotly_chart(fig_rango_cargo, use_container_width=True)
-else:
-    st.info("ℹ️ No hay retiros registrados para el período y zona seleccionados.")
-
-st.markdown("---")
-
-# ==========================
-# TABS PRINCIPALES
+# ANÁLISIS COMPARATIVO DE INDICADORES (PRIMERO)
 # ==========================
 st.markdown("### 📊 Análisis Comparativo de Indicadores")
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -768,18 +460,6 @@ with tab1:
                            yaxis_title='%', plot_bgcolor='white', paper_bgcolor='white', height=400)
         st.plotly_chart(fig2, use_container_width=True)
 
-    # Scatter activos vs retiros
-    fig_sc = px.scatter(
-        df_f, x='TOTAL_ACTIVOS', y='RETIROS',
-        size='TOTAL_AUSENTISMO', color='ZONA',
-        hover_name='ALMACEN',
-        hover_data={'TASA_ROTACION':':.1f', 'TOTAL_ACCIDENTES':True},
-        title='Relación Activos vs Retiros (tamaño = Ausentismo)',
-        color_discrete_sequence=CHART_COLORS
-    )
-    fig_sc.update_layout(plot_bgcolor='white', paper_bgcolor='white', height=400)
-    st.plotly_chart(fig_sc, use_container_width=True)
-
 # ── TAB 2: ROTACIÓN ─────────────────────────────────────────
 with tab2:
     c1, c2 = st.columns([2, 1])
@@ -787,7 +467,7 @@ with tab2:
     with c1:
         top_rot = df_f.nlargest(15, 'TASA_ROTACION')[
             ['ALMACEN','ZONA','TOTAL_ACTIVOS','RETIROS',
-             'TASA_ROTACION','TASA_ROTACION_MENUAL','TASA_ROTACION_ACT_MES_ANT']
+             'TASA_ROTACION','TASA_ROTACION_MENSUAL','TASA_ROTACION_ACT_MES_ANT']
         ].copy()
 
         fig = go.Figure()
@@ -801,7 +481,7 @@ with tab2:
                 colorscale=[[0, COLORS['warning']], [1, COLORS['danger']]]
             ),
             customdata=top_rot[['TOTAL_ACTIVOS','RETIROS','ZONA',
-                                 'TASA_ROTACION_MENUAL','TASA_ROTACION_ACT_MES_ANT']],
+                                 'TASA_ROTACION_MENSUAL','TASA_ROTACION_ACT_MES_ANT']],
             hovertemplate=(
                 '<b>%{y}</b><br>'
                 'Tasa rotación: %{x:.1f}%<br>'
@@ -829,7 +509,7 @@ with tab2:
         ))
         fig_cmp.add_trace(go.Bar(
             name='Tasa mes actual',
-            x=top_rot['ALMACEN'], y=top_rot['TASA_ROTACION_MENUAL'],
+            x=top_rot['ALMACEN'], y=top_rot['TASA_ROTACION_MENSUAL'],
             marker_color=COLORS['retiros']
         ))
         fig_cmp.update_layout(
@@ -1076,47 +756,366 @@ with tab5:
 st.markdown("---")
 
 # ==========================
+# ANÁLISIS POR OFICIO (NUEVO)
+# ==========================
+st.markdown("### 👔 Análisis por Cargo (NOM_OFICIO)")
+
+# Obtener datos de oficio del período seleccionado
+df_oficio = df_raw[(df_raw['MES'] == mes) & (df_raw['AÑO'] == año)].copy()
+if zona_seleccionada != "TODAS":
+    df_oficio = df_oficio[df_oficio['ZONA'] == zona_seleccionada]
+
+if not df_oficio.empty and 'NOM_OFICIO' in df_oficio.columns:
+    # Agregar por cargo
+    cargo_agg = df_oficio.groupby('NOM_OFICIO').agg({
+        'TOTAL_ACTIVOS': 'sum',
+        'RETIROS': 'sum',
+        'TOTAL_AUSENTISMO': 'sum',
+        'TOTAL_ACCIDENTES': 'sum'
+    }).reset_index()
+    
+    # CORREGIDO: Filtrar solo cargos con activos > 0
+    cargo_agg = cargo_agg[cargo_agg['TOTAL_ACTIVOS'] > 0]
+    
+    cargo_agg['TASA_ROTACION'] = (cargo_agg['RETIROS'] / cargo_agg['TOTAL_ACTIVOS'].clip(lower=1) * 100).fillna(0)
+    cargo_agg['TASA_AUSENTISMO'] = (cargo_agg['TOTAL_AUSENTISMO'] / cargo_agg['TOTAL_ACTIVOS'].clip(lower=1) * 100).fillna(0)
+    cargo_agg['TASA_ACCIDENTALIDAD'] = (cargo_agg['TOTAL_ACCIDENTES'] / cargo_agg['TOTAL_ACTIVOS'].clip(lower=1) * 100).fillna(0)
+    
+    cargo_agg = cargo_agg.sort_values('TOTAL_ACTIVOS', ascending=False)
+    
+    # Top 15 cargos por activos
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        top_cargo = cargo_agg.nlargest(15, 'TOTAL_ACTIVOS')
+        
+        fig_cargo = go.Figure()
+        fig_cargo.add_trace(go.Bar(
+            y=top_cargo['NOM_OFICIO'],
+            x=top_cargo['TOTAL_ACTIVOS'],
+            orientation='h',
+            text=top_cargo['TOTAL_ACTIVOS'],
+            texttemplate='%{text:,}',
+            textposition='outside',
+            marker=dict(color=COLORS['primary']),
+            hovertemplate='<b>%{y}</b><br>Activos: %{x:,}<extra></extra>'
+        ))
+        fig_cargo.update_layout(
+            title='🏆 Top 15 Cargos por Cantidad de Activos',
+            xaxis_title='Total Activos',
+            yaxis_title='',
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            height=450,
+            margin=dict(l=250)
+        )
+        st.plotly_chart(fig_cargo, use_container_width=True)
+    
+    with c2:
+        # NUEVO: Navegación entre variables para distribución
+        st.markdown("#### 📊 Distribución por Variable")
+        variable_sel = st.selectbox(
+            "Seleccionar variable:",
+            options=['TOTAL_ACTIVOS', 'TASA_ROTACION', 'TASA_AUSENTISMO', 'TASA_ACCIDENTALIDAD'],
+            format_func=lambda x: {
+                'TOTAL_ACTIVOS': '👥 Total Activos',
+                'TASA_ROTACION': '🚪 Tasa de Rotación (%)',
+                'TASA_AUSENTISMO': '😷 Tasa de Ausentismo (%)',
+                'TASA_ACCIDENTALIDAD': '🚑 Tasa de Accidentalidad (%)'
+            }[x],
+            key="variable_cargo"
+        )
+        
+        # Treemap según variable seleccionada
+        top_20 = cargo_agg.nlargest(20, variable_sel)
+        
+        # Color según la variable
+        if variable_sel == 'TOTAL_ACTIVOS':
+            color_scale = ['#7fa8e0', '#1e3c72']
+            titulo = 'Distribución de Activos por Cargo'
+        elif variable_sel == 'TASA_ROTACION':
+            color_scale = ['#fff3cd', '#dc3545']
+            titulo = 'Distribución de Rotación por Cargo'
+        elif variable_sel == 'TASA_AUSENTISMO':
+            color_scale = ['#fff3cd', '#ffc107']
+            titulo = 'Distribución de Ausentismo por Cargo'
+        else:
+            color_scale = ['#c8f7c5', '#28a745']
+            titulo = 'Distribución de Accidentalidad por Cargo'
+        
+        fig_treemap = px.treemap(
+            top_20,
+            path=['NOM_OFICIO'],
+            values=variable_sel,
+            title=titulo,
+            color=variable_sel,
+            color_continuous_scale=color_scale
+        )
+        fig_treemap.update_layout(height=450)
+        st.plotly_chart(fig_treemap, use_container_width=True)
+    
+    # Tabla de cargos
+    st.markdown("#### 📋 Detalle de Cargos")
+    cargo_table = cargo_agg.sort_values('TOTAL_ACTIVOS', ascending=False).head(20)
+    st.dataframe(
+        cargo_table.style.format({
+            'TOTAL_ACTIVOS': '{:,.0f}',
+            'RETIROS': '{:,.0f}',
+            'TOTAL_AUSENTISMO': '{:,.0f}',
+            'TOTAL_ACCIDENTES': '{:,.0f}',
+            'TASA_ROTACION': '{:.1f}%',
+            'TASA_AUSENTISMO': '{:.1f}%',
+            'TASA_ACCIDENTALIDAD': '{:.1f}%'
+        }),
+        use_container_width=True,
+        height=300
+    )
+
+st.markdown("---")
+
+# ==========================
+# TASAS POR ZONA (CAMBIADO: antes era por CCOSTO)
+# ==========================
+st.markdown("### 📊 Comparación de Tasas por Zona")
+
+# Agregar por zona
+zonas_tasas = df_f.groupby('ZONA').agg({
+    'TOTAL_ACTIVOS': 'sum',
+    'RETIROS': 'sum',
+    'TOTAL_AUSENTISMO': 'sum',
+    'TOTAL_ACCIDENTES': 'sum'
+}).reset_index()
+
+zonas_tasas['TASA_ROTACION'] = (zonas_tasas['RETIROS'] / zonas_tasas['TOTAL_ACTIVOS'].clip(lower=1) * 100).fillna(0)
+zonas_tasas['TASA_AUSENTISMO'] = (zonas_tasas['TOTAL_AUSENTISMO'] / zonas_tasas['TOTAL_ACTIVOS'].clip(lower=1) * 100).fillna(0)
+zonas_tasas['TASA_ACCIDENTALIDAD'] = (zonas_tasas['TOTAL_ACCIDENTES'] / zonas_tasas['TOTAL_ACTIVOS'].clip(lower=1) * 100).fillna(0)
+
+# Gráfico comparativo de tasas por zona
+fig_zonas = go.Figure()
+fig_zonas.add_trace(go.Bar(
+    name='Rotación %',
+    x=zonas_tasas['ZONA'],
+    y=zonas_tasas['TASA_ROTACION'],
+    marker_color=COLORS['retiros'],
+    text=zonas_tasas['TASA_ROTACION'].round(1),
+    texttemplate='%{text}%',
+    textposition='outside'
+))
+fig_zonas.add_trace(go.Bar(
+    name='Ausentismo %',
+    x=zonas_tasas['ZONA'],
+    y=zonas_tasas['TASA_AUSENTISMO'],
+    marker_color=COLORS['ausentismo'],
+    text=zonas_tasas['TASA_AUSENTISMO'].round(1),
+    texttemplate='%{text}%',
+    textposition='outside'
+))
+fig_zonas.add_trace(go.Bar(
+    name='Accidentalidad %',
+    x=zonas_tasas['ZONA'],
+    y=zonas_tasas['TASA_ACCIDENTALIDAD'],
+    marker_color=COLORS['accidentes'],
+    text=zonas_tasas['TASA_ACCIDENTALIDAD'].round(1),
+    texttemplate='%{text}%',
+    textposition='outside'
+))
+fig_zonas.update_layout(
+    title='📈 Comparación de Tasas por Zona',
+    barmode='group',
+    xaxis_title='Zona',
+    yaxis_title='Tasa (%)',
+    plot_bgcolor='white',
+    paper_bgcolor='white',
+    height=450
+)
+st.plotly_chart(fig_zonas, use_container_width=True)
+
+st.markdown("---")
+
+# ==========================
+# RETIROS POR RANGO DE PERMANENCIA (MODIFICADO)
+# ==========================
+st.markdown("### 🔄 Retiros por Rango de Permanencia")
+st.caption("*Solo se incluyen registros donde RETIROS >= 1*")
+
+# Obtener datos con retiros
+df_retiros = df_raw[(df_raw['MES'] == mes) & (df_raw['AÑO'] == año) & (df_raw['RETIROS'] >= 1)].copy()
+
+if zona_seleccionada != "TODAS":
+    df_retiros = df_retiros[df_retiros['ZONA'] == zona_seleccionada]
+
+if not df_retiros.empty and 'RANGO_PERMANENCIA' in df_retiros.columns:
+    # Agrupar por rango de permanencia
+    rango_agg = df_retiros.groupby('RANGO_PERMANENCIA').agg({
+        'RETIROS': 'sum',
+        'TOTAL_ACTIVOS': 'sum',
+        'ALMACEN': 'nunique'
+    }).reset_index()
+    
+    rango_agg.columns = ['Rango de Permanencia', 'Total Retiros', 'Total Activos', 'Num Tiendas']
+    
+    # Ordenar rangos lógicamente
+    orden_rangos = ['0-2 MESES', '2-4 MESES', '4-6 MESES', '6-12 MESES', 
+                    'A1-2 AÑOS', 'A2-3 AÑOS', 'A3-4 AÑOS', 'A4-5 AÑOS', 'A5+ AÑOS']
+    rango_agg['Orden'] = rango_agg['Rango de Permanencia'].map(
+        {r: i for i, r in enumerate(orden_rangos) if r in rango_agg['Rango de Permanencia'].values}
+    )
+    rango_agg = rango_agg.dropna(subset=['Orden'])
+    rango_agg = rango_agg.sort_values('Orden', ascending=True).drop('Orden', axis=1)
+    
+    # Solo gráfico de barras horizontales
+    fig_rango = go.Figure()
+    fig_rango.add_trace(go.Bar(
+        y=rango_agg['Rango de Permanencia'],
+        x=rango_agg['Total Retiros'],
+        orientation='h',
+        text=rango_agg['Total Retiros'],
+        texttemplate='%{text:,}',
+        textposition='outside',
+        marker=dict(
+            color=rango_agg['Total Retiros'],
+            colorscale=[[0, COLORS['accent']], [1, COLORS['danger']]]
+        ),
+        hovertemplate='<b>%{y}</b><br>Retiros: %{x:,}<extra></extra>'
+    ))
+    fig_rango.update_layout(
+        title='📊 Retiros por Rango de Permanencia',
+        xaxis_title='Total Retiros',
+        yaxis_title='Rango de Permanencia',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        height=400,
+        margin=dict(l=120)
+    )
+    st.plotly_chart(fig_rango, use_container_width=True)
+    
+    # Análisis por cargo y rango de permanencia (MEJORADO)
+    st.markdown("#### 👔 Top 10 Cargos con Más Retiros por Rango de Permanencia")
+    rango_cargo = df_retiros.groupby(['NOM_OFICIO', 'RANGO_PERMANENCIA']).agg({
+        'RETIROS': 'sum'
+    }).reset_index()
+    
+    if not rango_cargo.empty:
+        top_cargos_retiro = rango_cargo.groupby('NOM_OFICIO')['RETIROS'].sum().nlargest(10).index
+        rango_cargo_top = rango_cargo[rango_cargo['NOM_OFICIO'].isin(top_cargos_retiro)]
+        
+        # Pivot para visualización más clara
+        rango_pivot = rango_cargo_top.pivot(index='NOM_OFICIO', columns='RANGO_PERMANENCIA', values='RETIROS').fillna(0)
+        
+        # Reordenar columnas según orden lógico
+        cols_orden = [c for c in orden_rangos if c in rango_pivot.columns]
+        rango_pivot = rango_pivot[cols_orden]
+        
+        # Gráfico de barras apiladas horizontal
+        fig_rango_cargo = go.Figure()
+        
+        colores_rango = px.colors.qualitative.Set3[:len(cols_orden)]
+        
+        for i, rango in enumerate(cols_orden):
+            fig_rango_cargo.add_trace(go.Bar(
+                name=rango,
+                y=rango_pivot.index,
+                x=rango_pivot[rango],
+                orientation='h',
+                marker_color=colores_rango[i],
+                text=rango_pivot[rango].astype(int),
+                texttemplate='%{text}' if rango_pivot[rango].max() > 0 else '',
+                textposition='inside'
+            ))
+        
+        fig_rango_cargo.update_layout(
+            title='Distribución de Retiros por Cargo y Rango de Permanencia',
+            barmode='stack',
+            xaxis_title='Total Retiros',
+            yaxis_title='Cargo',
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            height=500,
+            margin=dict(l=250),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
+        )
+        st.plotly_chart(fig_rango_cargo, use_container_width=True)
+        
+        # Tabla resumen
+        st.markdown("#### 📊 Resumen por Cargo y Permanencia")
+        rango_cargo_display = rango_cargo_top.copy()
+        rango_cargo_display = rango_cargo_display.sort_values(['NOM_OFICIO', 'RETIROS'], ascending=[True, False])
+        st.dataframe(
+            rango_cargo_display.style.format({'RETIROS': '{:,.0f}'}),
+            use_container_width=True,
+            height=250
+        )
+else:
+    st.info("ℹ️ No hay retiros registrados para el período y zona seleccionados.")
+
+st.markdown("---")
+
+# ==========================
 # MAPA GEOGRÁFICO
 # ==========================
 st.markdown("### 🗺️ Vista Geográfica")
-col_map, col_cfg = st.columns([4, 1])
 
-with col_cfg:
-    st.markdown("#### ⚙️ Configuración")
-    metrica_mapa = st.selectbox(
-        "Métrica",
-        ['Total Activos','Tasa Rotación','Tasa Ausentismo','Tasa Accidentalidad',
-         'Días Ausencia','Horas Ausentismo'],
-        key="metrica_mapa"
-    )
-    tamaño_base   = st.slider("Tamaño base", 3, 15, 6,  key="tam_mapa")
-    factor_escala = st.slider("Escala",      0.1, 2.0, 0.4, step=0.1, key="esc_mapa")
-    mostrar_capa  = st.checkbox("Mostrar capa geográfica", value=False)
+# CORREGIDO: Filtrar solo datos con coordenadas válidas para el mapa
+df_map_full = df_f.copy()
+df_map = df_map_full.dropna(subset=['LATITUD', 'LONGITUD'])
 
-    st.markdown("---")
-    st.caption(f"📍 Puntos: {len(df_f)}")
-    st.caption(f"🌍 Zonas: {df_f['ZONA'].nunique()}")
+# Verificar que las coordenadas estén en rangos válidos (Colombia aprox)
+df_map = df_map[
+    (df_map['LATITUD'] > -5) & (df_map['LATITUD'] < 15) &
+    (df_map['LONGITUD'] > -80) & (df_map['LONGITUD'] < -65)
+]
 
-with col_map:
-    df_map = df_f.dropna(subset=['LATITUD','LONGITUD']).copy()
+if len(df_map) == 0:
+    st.warning("⚠️ No hay coordenadas válidas para mostrar en el mapa.")
+else:
+    st.success(f"✅ Mostrando {len(df_map)} ubicaciones con coordenadas válidas")
+    
+    col_map, col_cfg = st.columns([4, 1])
 
-    COL_MAP = {
-        'Total Activos':       ('TOTAL_ACTIVOS',      COLORS['primary']),
-        'Tasa Rotación':       ('TASA_ROTACION',      COLORS['retiros']),
-        'Tasa Ausentismo':     ('TASA_AUSENTISMO',    COLORS['ausentismo']),
-        'Tasa Accidentalidad': ('TASA_ACCIDENTALIDAD',COLORS['accidentes']),
-        'Días Ausencia':       ('DIAS_AUSENCIA',      COLORS['aus_medico']),
-        'Horas Ausentismo':    ('HORAS_AUSENTISMO',   COLORS['info']),
-    }
-    col_val, color_base = COL_MAP[metrica_mapa]
+    with col_cfg:
+        st.markdown("#### ⚙️ Configuración")
+        metrica_mapa = st.selectbox(
+            "Métrica",
+            ['Total Activos','Tasa Rotación','Tasa Ausentismo','Tasa Accidentalidad',
+             'Días Ausencia','Horas Ausentismo'],
+            key="metrica_mapa"
+        )
+        tamaño_base   = st.slider("Tamaño base", 3, 15, 6,  key="tam_mapa")
+        factor_escala = st.slider("Escala",      0.1, 2.0, 0.4, step=0.1, key="esc_mapa")
+        mostrar_capa  = st.checkbox("Mostrar capa geográfica", value=False)
 
-    if df_map.empty:
-        st.error("❌ No hay coordenadas válidas para mostrar.")
-    else:
+        st.markdown("---")
+        st.caption(f"📍 Puntos: {len(df_map)}")
+        st.caption(f"🌍 Zonas: {df_map['ZONA'].nunique()}")
+
+    with col_map:
+        COL_MAP = {
+            'Total Activos':       ('TOTAL_ACTIVOS',      COLORS['primary']),
+            'Tasa Rotación':       ('TASA_ROTACION',      COLORS['retiros']),
+            'Tasa Ausentismo':     ('TASA_AUSENTISMO',    COLORS['ausentismo']),
+            'Tasa Accidentalidad': ('TASA_ACCIDENTALIDAD',COLORS['accidentes']),
+            'Días Ausencia':       ('DIAS_AUSENCIA',      COLORS['aus_medico']),
+            'Horas Ausentismo':    ('HORAS_AUSENTISMO',   COLORS['info']),
+        }
+        col_val, color_base = COL_MAP[metrica_mapa]
+
+        # Centro del mapa basado en coordenadas promedio
         centro_lat = df_map['LATITUD'].mean()
         centro_lon = df_map['LONGITUD'].mean()
-        m = folium.Map(location=[centro_lat, centro_lon], zoom_start=11,
-                       tiles='CartoDB positron', control_scale=True, prefer_canvas=True)
+        
+        m = folium.Map(
+            location=[centro_lat, centro_lon], 
+            zoom_start=6,
+            tiles='CartoDB positron', 
+            control_scale=True, 
+            prefer_canvas=True
+        )
 
         if mostrar_capa:
             gdf = load_geojson()
@@ -1169,7 +1168,6 @@ with col_map:
 
         folium.LayerControl().add_to(m)
         st_folium(m, width=None, height=600, returned_objects=[])
-        st.success(f"✅ Mapa cargado: {len(df_map)} ubicaciones | Métrica: {metrica_mapa}")
 
 st.markdown("---")
 
