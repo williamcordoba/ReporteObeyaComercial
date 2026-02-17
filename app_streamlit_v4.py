@@ -360,7 +360,7 @@ else:
     st.info(f"📊 Mostrando la **totalidad** de datos ({len(df_zona)} registros)")
 
 # ── FILTRO DE TIENDA ────────────────────────────────────────
-st.markdown("### 🏪 Filtrar por Tienda (NOM_CCOSTO)")
+st.markdown("### 🏪 Filtrar por Tienda")
 st.markdown("*La lista se actualiza automáticamente según la zona seleccionada arriba*")
 
 # Las tiendas disponibles dependen de la zona seleccionada
