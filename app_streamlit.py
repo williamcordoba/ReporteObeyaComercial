@@ -317,13 +317,10 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("#### 💾 Exportar Datos")
 
-    @st.cache_data
-    def to_csv(d):
-        return d.to_csv(index=False).encode('utf-8')
-
+    csv_bytes = df.to_csv(index=False).encode('utf-8')
     st.download_button(
         "📥 Descargar CSV",
-        data=to_csv(df),
+        data=csv_bytes,
         file_name=f"Obeya_{mes}_{año}_{datetime.now().strftime('%Y%m%d')}.csv",
         mime="text/csv",
         use_container_width=True
