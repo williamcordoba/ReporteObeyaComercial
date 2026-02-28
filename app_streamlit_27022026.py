@@ -355,10 +355,10 @@ with st.sidebar:
     # Filtro de tipo de contrato
     st.markdown("#### 📄 Tipo de Contrato")
     if 'TIPO_CONTRATO' in df_raw.columns:
-        contratos = ['TODOS'] + sorted(df_raw['TIPO_CONTRATO'].dropna().unique().tolist())
+        contratos = sorted(df_raw['TIPO_CONTRATO'].dropna().unique().tolist())
     else:
-        contratos = ['TODOS']
-    contrato_sel = st.selectbox("Contrato", contratos, key="contrato_select")
+        contratos = []
+    contrato_sel = st.multiselect("Contrato",options=contratos,default=contratos)
 
     st.markdown("#### 🚨 Filtros de Alerta")
     mostrar_alertas = st.checkbox("🔔 Solo tiendas con alertas", value=False)
@@ -435,7 +435,7 @@ if zona_seleccionada != "TODAS":
 if tienda_sel != 'TODAS':
     df_raw_f = df_raw_f[df_raw_f['ALMACEN'] == tienda_sel]
 if contrato_sel != 'TODOS' and 'TIPO_CONTRATO' in df_raw_f.columns:
-    df_raw_f = df_raw_f[df_raw_f['TIPO_CONTRATO'] == contrato_sel]
+    df_raw_f = df_raw_f[df_raw_f['TIPO_CONTRATO'].isin(contrato_sel)]
 
 # ==========================
 # KPIs PRINCIPALES - INDICADORES DE RECURSOS HUMANOS
@@ -660,7 +660,10 @@ with tab1:
             ('🚑 Accidentes', 'TOTAL_ACCIDENTES', COLORS['accidentes']),
         ]:
             fig2.add_trace(go.Bar(
-                name=trace_name, x=tiendas_gen['ALMACEN'], y=tiendas_gen[col],
+                name=trace_name,
+                y=tiendas_gen['ALMACEN'],   # ← ahora va en Y
+                x=tiendas_gen[col],         # ← ahora va en X
+                orientation='h',            # ← esto las vuelve horizontales
                 marker_color=color,
                 text=tiendas_gen[col].astype(int),
                 texttemplate='%{text:,}',
@@ -668,7 +671,7 @@ with tab1:
             ))
         fig2.update_layout(
             title='Top 15 Tiendas – Métricas Generales', barmode='group',
-            xaxis_tickangle=-45, plot_bgcolor='white', paper_bgcolor='white', height=420
+            xaxis_tickangle=-45, plot_bgcolor='white', paper_bgcolor='white', height=520
         )
         st.plotly_chart(fig2, use_container_width=True)
 
