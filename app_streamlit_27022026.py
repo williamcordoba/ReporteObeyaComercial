@@ -50,7 +50,7 @@ CHART_COLORS = ['#1e3c72', '#2a5298', '#7fa8e0', '#5080c0', '#3060a0', '#406db8'
 # CONFIGURACIÓN DE RUTAS
 # ==========================
 import os
-CSV_PATH      = os.environ.get('CSV_PATH', 'data/data.csv')
+CSV_PATH      = os.environ.get('CSV_PATH', 'data.csv')
 GEOJSON_PATH  = os.environ.get('GEODATA_PATH', 'geodata')
 
 # ==========================
@@ -1342,4 +1342,5 @@ st.markdown(f"""
         <b>Registros:</b> {len(df_f):,} de {len(df):,}
     </p>
 </div>
+
 """, unsafe_allow_html=True)
