@@ -1336,9 +1336,13 @@ st.markdown(
     "El asistente tiene acceso al resumen estadístico de la data filtrada."
 )
 
-GROQ_API_KEY = "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"
+# Leer desde Streamlit Secrets (con fallback a variable de entorno)
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY", ""))
 GROQ_MODEL   = "llama3-70b-8192"
 GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
+if not GROQ_API_KEY:
+    st.error("⚠️ No se encontró GROQ_API_KEY. Configúrala en Streamlit Cloud → Settings → Secrets.")
+    st.stop()
 
 def build_data_context(df_filtrado: pd.DataFrame) -> str:
     """Genera un resumen compacto del DataFrame filtrado para el contexto del LLM."""
