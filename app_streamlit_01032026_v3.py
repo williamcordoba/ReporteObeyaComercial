@@ -474,7 +474,7 @@ total_acc   = int(df_f['TOTAL_ACCIDENTES'].sum())
 total_dias  = int(df_f['DIAS_AUSENCIA'].sum())
 num_tiendas = int(df_f['ALMACEN'].nunique())
 
-k1, k2, k3, k4, k5, k6, k7 = st.columns(6)
+k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
 k1.metric("👥 Nº Activos",       f"{total_act:,}")
 k2.metric("🏪 Nº Tiendas",    f"{num_tiendas:,}")
 k3.metric("🔄 Rotación",      f"{total_rot:,}")
