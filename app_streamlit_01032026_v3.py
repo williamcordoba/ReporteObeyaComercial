@@ -481,7 +481,7 @@ k3.metric("🔄 Rotación",      f"{total_rot:,}")
 k4.metric("😷 Ausentismo",    f"{total_aus:,}")
 k5.metric("🚑 Accidentes",    f"{total_acc:,}")
 k6.metric("📅 Días Ausencia", f"{total_dias:,}")
-k7.metric("💰 Costo de la nomina", "{Pendiente:,}")
+k7.metric("💰 Costo de la nomina", "N/A")
 
 st.markdown("---")
 
