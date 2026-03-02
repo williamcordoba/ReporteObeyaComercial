@@ -1395,26 +1395,20 @@ TOTALES GENERALES:
 
 
 def ask_groq(messages_history: list) -> str:
-    import urllib.request, json as _json
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = _json.dumps({
-        "model": GROQ_MODEL,
-        "messages": messages_history,
-        "temperature": 0.4,
-        "max_tokens": 1024,
-    }).encode("utf-8")
-
-    req = urllib.request.Request(GROQ_URL, data=payload, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = _json.loads(resp.read().decode("utf-8"))
-            return result["choices"][0]["message"]["content"]
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8")
-        return f"❌ Error Groq API ({e.code}): {body}"
+        from groq import Groq
+    except ImportError:
+        return "❌ Librería 'groq' no instalada. Agrégala a requirements.txt"
+
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        completion = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=messages_history,
+            temperature=0.4,
+            max_tokens=1024,
+        )
+        return completion.choices[0].message.content
     except Exception as e:
         return f"❌ Error al contactar Groq: {e}"
 
