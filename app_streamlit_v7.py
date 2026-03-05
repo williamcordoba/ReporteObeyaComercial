@@ -1219,56 +1219,52 @@ if not rango_cargo.empty:
 
     fig_rango_cargo = go.Figure()
     
-    # Colores de la primera gráfica (usando tu paleta de colores existente)
     for i, rango in enumerate(cols_orden):
         vals_rango = rango_pivot[rango].astype(int)
         fig_rango_cargo.add_trace(go.Bar(
             name=rango,
-            y=rango_pivot.index,
-            x=vals_rango,
-            orientation='h',
-            # Usar colores de la primera gráfica o mantener Set3
+            x=rango_pivot.index,  # Los cargos ahora en el eje X
+            y=vals_rango,         # Los valores ahora en el eje Y
+            orientation='v',       # EXPLÍCITAMENTE vertical
             marker_color=px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)],
             text=vals_rango,
-            texttemplate='%{x:,}',  # Formato de números con comas como en la primera gráfica
-            textposition='outside',  # Posición outside como en la primera gráfica
+            texttemplate='%{y:,}',
+            textposition='outside',
             textfont=dict(size=12)
         ))
 
-    # Aplicar el mismo estilo de layout que la primera gráfica
     fig_rango_cargo.update_layout(
         title='Top 10 Cargos – Rotación por Rango de Permanencia',
-        barmode='group',  # Cambiado a 'group' como en la primera gráfica
-        xaxis_title='Total Rotaciones',
-        yaxis_title='Cargo',
-        plot_bgcolor='white',  # Fondo blanco como en la primera gráfica
-        paper_bgcolor='white',  # Fondo blanco como en la primera gráfica
-        height=max(450, len(rango_pivot) * 40),
-        margin=dict(l=250, r=20, t=50, b=50),  # Ajustado el margen izquierdo
+        barmode='group',
+        xaxis_title='Cargo',
+        yaxis_title='Total Rotaciones',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        height=500,  # Altura fija para vertical
+        margin=dict(l=80, r=20, t=50, b=150),  # Más margen inferior para etiquetas X
         legend=dict(
             orientation="h",
             yanchor="bottom",
             y=1.02,
             xanchor="right",
             x=1,
-            bgcolor='rgba(255, 255, 255, 0.8)'  # Fondo semi-transparente para la leyenda
+            bgcolor='rgba(255, 255, 255, 0.8)'
         ),
-        font=dict(size=12),  # Tamaño de fuente consistente
-        hovermode='y unified'  # Mejor experiencia hover
+        font=dict(size=12),
+        hovermode='x unified'
     )
     
-    # Configurar el eje Y para mejor visualización
-    fig_rango_cargo.update_yaxes(
+    # Mantener el orden del eje X
+    fig_rango_cargo.update_xaxes(
         categoryorder='array',
         categoryarray=rango_pivot.index.tolist(),
-        tickfont=dict(size=11)  # Tamaño de fuente para etiquetas del eje Y
+        tickangle=45,  # Rotar etiquetas para mejor legibilidad
+        tickfont=dict(size=11)
     )
     
-    # Configurar el eje X con formato de números
-    fig_rango_cargo.update_xaxes(
-        tickfont=dict(size=11),
-        gridcolor='lightgray',  # Grid más suave como en la primera gráfica
-        griddash='dot'  # Líneas punteadas para la cuadrícula
+    fig_rango_cargo.update_yaxes(
+        gridcolor='lightgray',
+        griddash='dot'
     )
     
     st.plotly_chart(fig_rango_cargo, use_container_width=True, config={'scrollZoom': True})
