@@ -37,11 +37,11 @@ COLORS = {
     'gradient_start': '#1e3c72',
     'gradient_end':   '#2a5298',
     'retiros':        "#4a4a4a",
-    'ausentismo':     "#6e6e6e",
+    'ausentismo':     "#1335f7",
     'accidentes':     "#8a8a8a",
     'aus_medico':     '#7fa8e0',
-    'aus_legal':      '#5a5a5a',
-    'aus_admin':      '#2a2a2a',
+    'aus_legal':      "#2683ee",
+    'aus_admin':      "#051031",
 }
 
 CHART_COLORS = ['#1e3c72', '#6e6e6e', '#7fa8e0', '#8a8a8a', '#5a5a5a', '#4a4a4a']
@@ -1218,8 +1218,8 @@ if not rango_cargo.empty:
     rango_pivot = rango_pivot.sort_values('_total', ascending=True).drop('_total', axis=1)
 
     fig_rango_cargo = go.Figure()
-    colores_rango = px.colors.qualitative.Set3[:len(cols_orden)]
-
+    
+    # Colores de la primera gráfica (usando tu paleta de colores existente)
     for i, rango in enumerate(cols_orden):
         vals_rango = rango_pivot[rango].astype(int)
         fig_rango_cargo.add_trace(go.Bar(
@@ -1227,34 +1227,53 @@ if not rango_cargo.empty:
             y=rango_pivot.index,
             x=vals_rango,
             orientation='h',
-            marker_color=colores_rango[i],
-            text=vals_rango.where(vals_rango > 0, other=''),
-            texttemplate='%{text}',
-            textposition='inside',
-            textfont=dict(size=12)  # ← AGREGADO: Aumenta el tamaño de los números
+            # Usar colores de la primera gráfica o mantener Set3
+            marker_color=px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)],
+            text=vals_rango,
+            texttemplate='%{x:,}',  # Formato de números con comas como en la primera gráfica
+            textposition='outside',  # Posición outside como en la primera gráfica
+            textfont=dict(size=12)
         ))
 
+    # Aplicar el mismo estilo de layout que la primera gráfica
     fig_rango_cargo.update_layout(
         title='Top 10 Cargos – Rotación por Rango de Permanencia',
-        barmode='stack',
+        barmode='group',  # Cambiado a 'group' como en la primera gráfica
         xaxis_title='Total Rotaciones',
         yaxis_title='Cargo',
-        plot_bgcolor='white', paper_bgcolor='white',
+        plot_bgcolor='white',  # Fondo blanco como en la primera gráfica
+        paper_bgcolor='white',  # Fondo blanco como en la primera gráfica
         height=max(450, len(rango_pivot) * 40),
-        margin=dict(l=280),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        margin=dict(l=250, r=20, t=50, b=50),  # Ajustado el margen izquierdo
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            bgcolor='rgba(255, 255, 255, 0.8)'  # Fondo semi-transparente para la leyenda
+        ),
+        font=dict(size=12),  # Tamaño de fuente consistente
+        hovermode='y unified'  # Mejor experiencia hover
     )
     
-    # Forzar el orden del eje Y
+    # Configurar el eje Y para mejor visualización
     fig_rango_cargo.update_yaxes(
         categoryorder='array',
-        categoryarray=rango_pivot.index.tolist()
+        categoryarray=rango_pivot.index.tolist(),
+        tickfont=dict(size=11)  # Tamaño de fuente para etiquetas del eje Y
+    )
+    
+    # Configurar el eje X con formato de números
+    fig_rango_cargo.update_xaxes(
+        tickfont=dict(size=11),
+        gridcolor='lightgray',  # Grid más suave como en la primera gráfica
+        griddash='dot'  # Líneas punteadas para la cuadrícula
     )
     
     st.plotly_chart(fig_rango_cargo, use_container_width=True, config={'scrollZoom': True})
 else:
     st.info("ℹ️ No hay rotaciones registradas para el período y filtros seleccionados.")
-
 st.markdown("---")
 
 # ==========================
