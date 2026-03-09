@@ -36,7 +36,7 @@ COLORS = {
     'dark':           '#343a40',
     'gradient_start': '#1e3c72',
     'gradient_end':   '#2a5298',
-    'retiros':        "#4a4a4a",
+    'retiros':        "#9bf8d1",
     'ausentismo':     "#1335f7",
     'accidentes':     "#8a8a8a",
     'aus_medico':     '#7fa8e0',
@@ -463,29 +463,21 @@ dias_leg    = int(df_f['DIAS_LEGAL'].sum()) if 'DIAS_LEGAL' in df_f.columns else
 dias_med    = int(df_f['DIAS_MEDICO'].sum()) if 'DIAS_MEDICO' in df_f.columns else 0
 
 # ── SUBSECCIÓN 1: Fuerza laboral ─────────────────────────────
-st.markdown("#### 👥 Fuerza Laboral")
+st.markdown("#### 👥 Datos Generales")
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("🏪 Nº Tiendas",            f"{num_tiendas:,}")
-k2.metric("✅ Personal Autorizado",    "0")
+k2.metric("✅ Personal Autorizado",    "🚧​")
 k3.metric("👥 Personal Activo",       f"{total_act:,}")
-k4.metric("📋 Vacantes",              "0")
+k4.metric("📋 Vacantes",              "🚧​")
 
 st.markdown("---")
 
 # ── SUBSECCIÓN 2: Costo de Nómina ────────────────────────────
 st.markdown("#### 💰 Costo de la Nómina")
 cn1, cn2, cn3 = st.columns(3)
-cn1.metric("🎯 Meta",               "N/A")
-cn2.metric("📅 Costo Mes Actual",   "N/A")
-cn3.metric("📆 Acumulado Año",      "N/A")
-
-st.markdown("---")
-
-# ── SUBSECCIÓN 3: Rotación ───────────────────────────────────
-st.markdown("#### 🔄 Rotación")
-tasa_rot = (total_rot / max(total_act, 1)) * 100
-st.metric("🔄 Tasa de Rotación", f"{tasa_rot:.2f}%",
-          help="Retiros / Activos × 100")
+cn1.metric("🎯 Meta",               "🚧​")
+cn2.metric("📅 Costo Mes Actual",   "🚧​")
+cn3.metric("📆 Acumulado Año",      "🚧​")
 
 st.markdown("---")
 
@@ -514,9 +506,9 @@ if horas_trab > 0:
 else:
     frecuencia = 0.0
     severidad  = 0.0
-acc2.metric("📈 Frecuencia",     f"{frecuencia:.2f}",
+acc2.metric("📈 Frecuencia",     f"{0:.2f}",
             help="Accidentes / Horas trabajadas × 240.000")
-acc3.metric("📉 Severidad",      f"{severidad:.2f}",
+acc3.metric("📉 Severidad",      f"{0:.2f}",
             help="Días de ausencia / Horas trabajadas × 240.000")
 
 st.markdown("---")
@@ -1029,11 +1021,19 @@ if not df_oficio.empty and 'NOM_OFICIO' in df_oficio.columns and 'MOTIVO' in df_
     ).reset_index()
     cargo_rot = cargo_rot[cargo_rot['RETIROS'] > 0].sort_values('RETIROS', ascending=False).head(10)
     
-    # Preparar datos para motivos
+    # Preparar datos para motivos - EXCLUYENDO MOTIVOS ESPECÍFICOS
     df_motivos = df_oficio[df_oficio['RETIROS'] >= 1].copy()
     
-    if not cargo_rot.empty and not df_motivos.empty:
-        motivo_agg = df_motivos.groupby('MOTIVO')['RETIROS'].sum().reset_index()
+    # Filtrar para excluir los motivos no deseados
+    motivos_excluir = [
+        'Terminación de contrato con justa causa', 
+        'Terminación de contrato sin justa causa'
+    ]
+    
+    df_motivos_filtrado = df_motivos[~df_motivos['MOTIVO'].isin(motivos_excluir)].copy()
+    
+    if not cargo_rot.empty and not df_motivos_filtrado.empty:
+        motivo_agg = df_motivos_filtrado.groupby('MOTIVO')['RETIROS'].sum().reset_index()
         motivo_agg.columns = ['Motivo', 'Total Rotaciones']
         motivo_agg = motivo_agg.sort_values('Total Rotaciones', ascending=False)
         
@@ -1069,7 +1069,7 @@ if not df_oficio.empty and 'NOM_OFICIO' in df_oficio.columns and 'MOTIVO' in df_
             st.plotly_chart(fig_top_cargo, use_container_width=True, config={'scrollZoom': True})
         
         with col_motivos:
-            # Gráfica de torta - Distribución de motivos
+            # Gráfica de torta - Distribución de motivos (más pequeña)
             def wrap_label(s, width=20):
                 words = str(s).split()
                 lines, cur = [], ''
@@ -1092,15 +1092,15 @@ if not df_oficio.empty and 'NOM_OFICIO' in df_oficio.columns and 'MOTIVO' in df_
                 hole=0.35,
                 text=[f"{int(v):,}" for v in motivo_agg['Total Rotaciones']],
                 textinfo='label+text',
-                textfont=dict(size=11),
+                textfont=dict(size=10),  # Reducido tamaño de fuente
                 marker=dict(colors=px.colors.qualitative.Set3)  # Colores variados
             ))
             fig_pie_mot.update_layout(
                 title='Distribución de Motivos',
-                height=350,
-                margin=dict(l=10, r=10, t=50, b=10),
+                height=280,  # Reducido de 350 a 280
+                margin=dict(l=5, r=5, t=40, b=5),  # Márgenes más pequeños
                 showlegend=True,
-                legend=dict(orientation='v', x=1.01, y=0.5, font=dict(size=10)),
+                legend=dict(orientation='v', x=1.01, y=0.5, font=dict(size=9)),  # Leyenda más pequeña
                 plot_bgcolor='white', 
                 paper_bgcolor='white'
             )
@@ -1108,8 +1108,8 @@ if not df_oficio.empty and 'NOM_OFICIO' in df_oficio.columns and 'MOTIVO' in df_
     else:
         if cargo_rot.empty:
             st.warning("⚠️ No hay datos de rotación por cargo para los filtros seleccionados.")
-        if df_motivos.empty:
-            st.warning("⚠️ No hay datos de motivos de retiro para los filtros seleccionados.")
+        if df_motivos_filtrado.empty:
+            st.warning("⚠️ No hay datos de motivos de retiro (excluyendo terminaciones de contrato) para los filtros seleccionados.")
 else:
     st.info("ℹ️ No se encontraron las columnas necesarias (NOM_OFICIO y/o MOTIVO) en los datos.")
 
@@ -1204,70 +1204,82 @@ rango_cargo = df_retiros.groupby(['NOM_OFICIO', 'RANGO_PERMANENCIA']).agg(
 ).reset_index()
 
 if not rango_cargo.empty:
-    top_cargos_retiro = rango_cargo.groupby('NOM_OFICIO')['RETIROS'].sum().nlargest(10).index
+    # PRIMERO: Calcular totales y filtrar SOLO cargos con retiros > 0
+    totales_cargos = rango_cargo.groupby('NOM_OFICIO')['RETIROS'].sum()
+    cargos_con_retiros = totales_cargos[totales_cargos > 0].index
+    
+    # Luego tomar top 10 SOLO de cargos con retiros
+    top_cargos_retiro = totales_cargos[cargos_con_retiros].nlargest(10).index
+    
     rango_cargo_top = rango_cargo[rango_cargo['NOM_OFICIO'].isin(top_cargos_retiro)]
 
     rango_pivot = rango_cargo_top.pivot(index='NOM_OFICIO', columns='RANGO_PERMANENCIA', values='RETIROS').fillna(0)
     cols_orden = [c for c in orden_rangos if c in rango_pivot.columns]
     rango_pivot = rango_pivot[cols_orden]
 
-    # Calcular totales para ordenamiento
-    rango_pivot['_total'] = rango_pivot.sum(axis=1)
-    
-    # ORDENAR DE MENOR A MAYOR (ascending=True)
-    rango_pivot = rango_pivot.sort_values('_total', ascending=True).drop('_total', axis=1)
+    # Verificar que no esté vacío después del filtrado
+    if not rango_pivot.empty:
+        # Calcular totales para ordenamiento
+        rango_pivot['_total'] = rango_pivot.sum(axis=1)
+        
+        # ORDENAR DE MENOR A MAYOR (ascending=True)
+        rango_pivot = rango_pivot.sort_values('_total', ascending=True).drop('_total', axis=1)
 
-    fig_rango_cargo = go.Figure()
-    
-    for i, rango in enumerate(cols_orden):
-        vals_rango = rango_pivot[rango].astype(int)
-        fig_rango_cargo.add_trace(go.Bar(
-            name=rango,
-            x=rango_pivot.index,  # Los cargos ahora en el eje X
-            y=vals_rango,         # Los valores ahora en el eje Y
-            orientation='v',       # EXPLÍCITAMENTE vertical
-            marker_color=px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)],
-            text=vals_rango,
-            texttemplate='%{y:,}',
-            textposition='outside',
-            textfont=dict(size=12)
-        ))
+        fig_rango_cargo = go.Figure()
+        
+        for i, rango in enumerate(cols_orden):
+            vals_rango = rango_pivot[rango].astype(int)
+            fig_rango_cargo.add_trace(go.Bar(
+                name=rango,
+                x=rango_pivot.index,
+                y=vals_rango,
+                orientation='v',
+                marker_color=px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)],
+                text=vals_rango,
+                texttemplate='%{y:,}',
+                textposition='outside',
+                textfont=dict(size=12)
+            ))
 
-    fig_rango_cargo.update_layout(
-        title='Top 10 Cargos – Rotación por Rango de Permanencia',
-        barmode='group',
-        xaxis_title='Cargo',
-        yaxis_title='Total Rotaciones',
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        height=500,  # Altura fija para vertical
-        margin=dict(l=80, r=20, t=50, b=150),  # Más margen inferior para etiquetas X
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            bgcolor='rgba(255, 255, 255, 0.8)'
-        ),
-        font=dict(size=12),
-        hovermode='x unified'
-    )
-    
-    # Mantener el orden del eje X
-    fig_rango_cargo.update_xaxes(
-        categoryorder='array',
-        categoryarray=rango_pivot.index.tolist(),
-        tickangle=45,  # Rotar etiquetas para mejor legibilidad
-        tickfont=dict(size=11)
-    )
-    
-    fig_rango_cargo.update_yaxes(
-        gridcolor='lightgray',
-        griddash='dot'
-    )
-    
-    st.plotly_chart(fig_rango_cargo, use_container_width=True, config={'scrollZoom': True})
+        fig_rango_cargo.update_layout(
+            title='Top 10 Cargos – Rotación por Rango de Permanencia',
+            barmode='group',
+            xaxis_title='Cargo',
+            yaxis_title='Total Rotaciones (escala log)',
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            height=500,
+            margin=dict(l=80, r=20, t=50, b=150),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                bgcolor='rgba(255, 255, 255, 0.8)'
+            ),
+            font=dict(size=12),
+            hovermode='x unified'
+        )
+        
+        # Aplicar escala logarítmica al eje Y
+        fig_rango_cargo.update_yaxes(
+            type="log",
+            gridcolor='lightgray',
+            griddash='dot',
+            tickfont=dict(size=11)
+        )
+        
+        fig_rango_cargo.update_xaxes(
+            categoryorder='array',
+            categoryarray=rango_pivot.index.tolist(),
+            tickangle=45,
+            tickfont=dict(size=11)
+        )
+        
+        st.plotly_chart(fig_rango_cargo, use_container_width=True, config={'scrollZoom': True})
+    else:
+        st.info("ℹ️ No hay cargos con retiros mayores a cero para el período y filtros seleccionados.")
 else:
     st.info("ℹ️ No hay rotaciones registradas para el período y filtros seleccionados.")
 st.markdown("---")
