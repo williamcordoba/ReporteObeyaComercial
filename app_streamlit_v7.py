@@ -484,13 +484,13 @@ st.markdown("---")
 # ── SUBSECCIÓN 4: Ausentismo ─────────────────────────────────
 st.markdown("#### 😷 Ausentismo")
 a1, a2, a3, a4, a5, a6, a7 = st.columns(7)
-a1.metric("📊 Nº Ausencias",         f"{total_aus:,}")
-a2.metric("🗂️ Administrativo",       f"{aus_admin:,}")
-a3.metric("⚖️ Legal",                f"{aus_leg:,}")
-a4.metric("🏥 Médico",               f"{aus_med:,}")
-a5.metric("📅 Días (Admin)",         f"{dias_admin:,}")
-a6.metric("📅 Días (Legal)",         f"{dias_leg:,}")
-a7.metric("📅 Días (Médico)",        f"{dias_med:,}")
+a1.metric("📊 Nº Ausencias",         f"🚧")
+a2.metric("🗂️ Administrativo",       f"🚧")
+a3.metric("⚖️ Legal",                f"🚧")
+a4.metric("🏥 Médico",               f"🚧")
+a5.metric("📅 Días (Admin)",         f"🚧​")
+a6.metric("📅 Días (Legal)",         f"🚧​")
+a7.metric("📅 Días (Médico)",        f"🚧​")
 
 st.markdown("---")
 
@@ -1196,93 +1196,6 @@ if not df_retiros.empty and 'RANGO_PERMANENCIA' in df_retiros.columns:
         height=400, margin=dict(l=120)
     )
     st.plotly_chart(fig_rango, use_container_width=True)
-
-# Top Cargos con más retiros por rango de permanencia
-st.markdown("#### 👔 Top Cargos con Más Retiros por Rango de Permanencia")
-rango_cargo = df_retiros.groupby(['NOM_OFICIO', 'RANGO_PERMANENCIA']).agg(
-    RETIROS=('RETIROS', 'sum')
-).reset_index()
-
-if not rango_cargo.empty:
-    # PRIMERO: Calcular totales y filtrar SOLO cargos con retiros > 0
-    totales_cargos = rango_cargo.groupby('NOM_OFICIO')['RETIROS'].sum()
-    cargos_con_retiros = totales_cargos[totales_cargos > 0].index
-    
-    # Luego tomar top 10 SOLO de cargos con retiros
-    top_cargos_retiro = totales_cargos[cargos_con_retiros].nlargest(10).index
-    
-    rango_cargo_top = rango_cargo[rango_cargo['NOM_OFICIO'].isin(top_cargos_retiro)]
-
-    rango_pivot = rango_cargo_top.pivot(index='NOM_OFICIO', columns='RANGO_PERMANENCIA', values='RETIROS').fillna(0)
-    cols_orden = [c for c in orden_rangos if c in rango_pivot.columns]
-    rango_pivot = rango_pivot[cols_orden]
-
-    # Verificar que no esté vacío después del filtrado
-    if not rango_pivot.empty:
-        # Calcular totales para ordenamiento
-        rango_pivot['_total'] = rango_pivot.sum(axis=1)
-        
-        # ORDENAR DE MENOR A MAYOR (ascending=True)
-        rango_pivot = rango_pivot.sort_values('_total', ascending=True).drop('_total', axis=1)
-
-        fig_rango_cargo = go.Figure()
-        
-        for i, rango in enumerate(cols_orden):
-            vals_rango = rango_pivot[rango].astype(int)
-            fig_rango_cargo.add_trace(go.Bar(
-                name=rango,
-                x=rango_pivot.index,
-                y=vals_rango,
-                orientation='v',
-                marker_color=px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)],
-                text=vals_rango,
-                texttemplate='%{y:,}',
-                textposition='outside',
-                textfont=dict(size=12)
-            ))
-
-        fig_rango_cargo.update_layout(
-            title='Top 10 Cargos – Rotación por Rango de Permanencia',
-            barmode='group',
-            xaxis_title='Cargo',
-            yaxis_title='Total Rotaciones (escala log)',
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            height=500,
-            margin=dict(l=80, r=20, t=50, b=150),
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1,
-                bgcolor='rgba(255, 255, 255, 0.8)'
-            ),
-            font=dict(size=12),
-            hovermode='x unified'
-        )
-        
-        # Aplicar escala logarítmica al eje Y
-        fig_rango_cargo.update_yaxes(
-            type="log",
-            gridcolor='lightgray',
-            griddash='dot',
-            tickfont=dict(size=11)
-        )
-        
-        fig_rango_cargo.update_xaxes(
-            categoryorder='array',
-            categoryarray=rango_pivot.index.tolist(),
-            tickangle=45,
-            tickfont=dict(size=11)
-        )
-        
-        st.plotly_chart(fig_rango_cargo, use_container_width=True, config={'scrollZoom': True})
-    else:
-        st.info("ℹ️ No hay cargos con retiros mayores a cero para el período y filtros seleccionados.")
-else:
-    st.info("ℹ️ No hay rotaciones registradas para el período y filtros seleccionados.")
-st.markdown("---")
 
 # ==========================
 # MAPA GEOGRÁFICO
