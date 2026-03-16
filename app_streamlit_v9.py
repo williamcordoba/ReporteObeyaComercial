@@ -1333,14 +1333,14 @@ st.caption(f"📊 {len(tabla):,} registros | Período: {mes} {año}")
 # CHAT IA CON GROQ - VERSIÓN MEJORADA CON COMPARATIVAS DE MERCADO
 # ==========================
 st.markdown("---")
-st.markdown("### 🤖 Asistente IA — Consultas de Negocio con Benchmarking")
+st.markdown("### 🤖 Asistente IA ")
 st.markdown(
     "Haz preguntas sobre los datos del período seleccionado. "
     "El asistente puede comparar el rendimiento de Koaj con el mercado retail textil."
 )
 
-GROQ_API_KEY = "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"
-GROQ_MODEL   = "llama3-70b-8192"
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY", ""))
+GROQ_MODEL   = "llama-3.3-70b-versatile"
 GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
 
 def build_market_benchmark_context() -> str:
