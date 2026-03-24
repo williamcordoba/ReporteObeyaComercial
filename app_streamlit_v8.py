@@ -110,23 +110,18 @@ MES_ORDEN = {
     '09. SEPTIEMBRE': 9, '10. OCTUBRE': 10, '11. NOVIEMBRE': 11, '12. DICIEMBRE': 12
 }
 
-# Mapeo MES plano → formato data.csv (usado por load_autorizacion)
-_MES_AUTH_MAP = {
-    'ENERO': '01. ENERO', 'FEBRERO': '02. FEBRERO', 'MARZO': '03. MARZO',
-    'ABRIL': '04. ABRIL', 'MAYO': '05. MAYO', 'JUNIO': '06. JUNIO',
-    'JULIO': '07. JULIO', 'AGOSTO': '08. AGOSTO', 'SEPTIEMBRE': '09. SEPTIEMBRE',
-    'OCTUBRE': '10. OCTUBRE', 'NOVIEMBRE': '11. NOVIEMBRE', 'DICIEMBRE': '12. DICIEMBRE',
-}
-
 @st.cache_data(ttl=600, show_spinner=False)
 def load_autorizacion():
     """
     Carga AUTORIZACION.csv y retorna un DataFrame con PLAZAS_AUTORIZADAS_ORIG
-    sumadas por (_TIENDA, _CARGO, MES, AÑO), donde:
-      - _TIENDA = CENTRO DE COSTOS normalizado (sin tildes, sin espacios extra)
-      - _CARGO  = NOMBRE DEL CARGO normalizado (sin tildes, espacios internos colapsados)
-      - MES     = convertido a formato '01. ENERO' para coincidir con data.csv
-      - AÑO     = int
+    sumadas por (_TIENDA, _CARGO, MES, AÑO).
+
+    Estructura del CSV (versión actual):
+      - AREA                          → tienda  (_TIENDA)
+      - NOMBRE DEL CARGO              → cargo   (_CARGO)
+      - MES                           → ya en formato '01. ENERO'
+      - AÑO                           → int
+      - PLAZAS AUTORIZADAS INDEFINIDAS → métrica de plazas
 
     Join con data.csv  : _TIENDA ↔ NOM_CCOSTO  |  _CARGO ↔ NOM_OFICIO
     Join con nómina.csv: _TIENDA ↔ NOM CCO     |  _CARGO ↔ OFICIO
@@ -134,14 +129,9 @@ def load_autorizacion():
     import unicodedata, re
 
     def norm(s):
-        """Strip, upper, quita tildes, colapsa espacios y estandariza
-        sufijos de horas: '36H' → '36 H', '42H' → '42 H', etc."""
         s = str(s).strip().upper()
         s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
-        s = re.sub(r'\s+', ' ', s)
-        # Unificar '36H' → '36 H'  (número pegado a H sin espacio)
-        s = re.sub(r'(\d)(H)\b', r'\1 \2', s)
-        return s
+        return re.sub(r'\s+', ' ', s)
 
     for path in [AUTORIZACION_PATH, 'AUTORIZACION.csv']:
         try:
@@ -154,14 +144,12 @@ def load_autorizacion():
 
     df.columns = df.columns.str.strip()
 
-    df['_TIENDA'] = df['CENTRO DE COSTOS'].apply(norm)
+    df['_TIENDA'] = df['AREA'].apply(norm)
     df['_CARGO']  = df['NOMBRE DEL CARGO'].apply(norm)
-    df['MES']     = (df['MES'].astype(str).str.strip().str.upper()
-                     .map(_MES_AUTH_MAP)
-                     .fillna(df['MES'].astype(str).str.strip().str.upper()))
-    df['AÑO']     = pd.to_numeric(df['AÑO'], errors='coerce').astype('Int64')
+    df['MES']     = df['MES'].astype(str).str.strip().str.upper()
+    df['AÑO']     = pd.to_numeric(df['AÑO'], errors='coerce').astype(int)
     df['PLAZAS_AUTORIZADAS_ORIG'] = pd.to_numeric(
-        df['PLAZAS AUTORIZADAS Orig'].astype(str)
+        df['PLAZAS AUTORIZADAS INDEFINIDAS'].astype(str)
           .str.replace(',', '.', regex=False).str.strip(),
         errors='coerce'
     ).fillna(0)
@@ -187,9 +175,7 @@ def get_personal_autorizado(mes: str, año: int, almacenes_activos=None, cargos_
     def norm(s):
         s = str(s).strip().upper()
         s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
-        s = re.sub(r'\s+', ' ', s)
-        s = re.sub(r'(\d)(H)\b', r'\1 \2', s)
-        return s
+        return re.sub(r'\s+', ' ', s)
 
     df_auth = load_autorizacion()
     if df_auth.empty:
@@ -198,7 +184,7 @@ def get_personal_autorizado(mes: str, año: int, almacenes_activos=None, cargos_
     # Filtrar en pasos independientes sin mutar (evita problemas con cache de Streamlit)
     resultado = df_auth[
         (df_auth['MES'] == mes) &
-        (df_auth['AÑO'].astype(int) == int(año))
+        (df_auth['AÑO'] == int(año))
     ].copy()
 
     if almacenes_activos is not None:
