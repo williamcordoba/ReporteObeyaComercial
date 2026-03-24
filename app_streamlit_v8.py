@@ -114,17 +114,10 @@ MES_ORDEN = {
 def load_autorizacion():
     """
     Carga AUTORIZACION.csv y retorna un DataFrame con PLAZAS_AUTORIZADAS_ORIG
-    sumadas por (_TIENDA, _CARGO, MES, AÑO).
+    sumadas por (_TIENDA, AREA, ZONA, _CARGO, MES, AÑO).
 
-    Estructura del CSV (versión actual):
-      - AREA                          → tienda  (_TIENDA)
-      - NOMBRE DEL CARGO              → cargo   (_CARGO)
-      - MES                           → ya en formato '01. ENERO'
-      - AÑO                           → int
-      - PLAZAS AUTORIZADAS INDEFINIDAS → métrica de plazas
-
-    Join con data.csv  : _TIENDA ↔ NOM_CCOSTO  |  _CARGO ↔ NOM_OFICIO
-    Join con nómina.csv: _TIENDA ↔ NOM CCO     |  _CARGO ↔ OFICIO
+    ZONA se obtiene via join con data.csv (AREA ↔ NOM_CCOSTO normalizado).
+    Tiendas sin match en data quedan con ZONA = 'SIN ZONA'.
     """
     import unicodedata, re
 
@@ -133,11 +126,11 @@ def load_autorizacion():
         s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
         return re.sub(r'\s+', ' ', s)
 
-    # Tabla de estandarización: variantes del CSV → nombre canónico de data.csv
+    # Tabla de estandarización de cargos
     CARGO_MAP = {
         'CAJERO(A) 48H':            'CAJERO(A) 48 H',
         'CAJERO(A) 36H':            'CAJERO(A) 36 H',
-        'STAFF COMERCIAL 47 H':     'STAFF COMERCIAL 48 H',   # error tipográfico en fuente
+        'STAFF COMERCIAL 47 H':     'STAFF COMERCIAL 48 H',
         'STAFF DE TIENDA 47H':      'STAFF COMERCIAL 48 H',
         'STAFF COMERCIAL 48H':      'STAFF COMERCIAL 48 H',
         'STAFF DE TIENDA 48H':      'STAFF COMERCIAL 48 H',
@@ -148,9 +141,7 @@ def load_autorizacion():
         'AUXILIAR COMERCIAL 48H':   'AUXILIAR COMERCIAL 48 H',
         'AUXILIAR COMERCIAL 36H':   'AUXILIAR COMERCIAL 36 H',
     }
-    # Normalizar las claves del mapa
     CARGO_MAP_NORM = {norm(k): norm(v) for k, v in CARGO_MAP.items()}
-
     def norm_cargo(s):
         n = norm(s)
         return CARGO_MAP_NORM.get(n, n)
@@ -162,7 +153,7 @@ def load_autorizacion():
         except FileNotFoundError:
             continue
     else:
-        return pd.DataFrame(columns=['_TIENDA', '_CARGO', 'MES', 'AÑO', 'PLAZAS_AUTORIZADAS_ORIG'])
+        return pd.DataFrame(columns=['_TIENDA', 'AREA', 'ZONA', '_CARGO', 'MES', 'AÑO', 'PLAZAS_AUTORIZADAS_ORIG'])
 
     df.columns = df.columns.str.strip()
 
@@ -176,20 +167,46 @@ def load_autorizacion():
         errors='coerce'
     ).fillna(0)
 
+    # Traer ZONA desde data.csv (join por _TIENDA normalizado)
+    try:
+        df_data = pd.read_csv(CSV_PATH, encoding='utf-8-sig', sep=';')
+        df_data.columns = df_data.columns.str.strip().str.upper().str.replace(' ', '_', regex=False)
+        zonas_map = (
+            df_data[['NOM_CCOSTO', 'ZONA']].dropna()
+            .assign(_TIENDA=lambda d: d['NOM_CCOSTO'].apply(norm))
+            .groupby('_TIENDA')['ZONA'].first()
+            .reset_index()
+        )
+        df = df.merge(zonas_map, on='_TIENDA', how='left')
+        df['ZONA'] = df['ZONA'].fillna('SIN ZONA')
+    except Exception:
+        df['ZONA'] = 'SIN ZONA'
+
     return (
-        df.groupby(['_TIENDA', '_CARGO', 'MES', 'AÑO'], dropna=False)['PLAZAS_AUTORIZADAS_ORIG']
+        df.groupby(['_TIENDA', 'AREA', 'ZONA', '_CARGO', 'MES', 'AÑO'], dropna=False)['PLAZAS_AUTORIZADAS_ORIG']
         .sum()
         .reset_index()
         .copy()
     )
 
 
-def get_personal_autorizado(mes: str, año: int) -> int:
+def get_personal_autorizado(mes: str, año: int,
+                             zona_sel: str = 'TODAS',
+                             tienda_sel: str = 'TODAS') -> int:
     """
     Suma PLAZAS_AUTORIZADAS_ORIG para el mes/año dado.
-    Retorna el total puro del CSV de autorización sin ningún filtro adicional,
-    incluyendo todas las tiendas y cargos definidos para ese período.
+    - Sin filtros (TODAS): total puro del CSV → número global aprobado.
+    - Con zona   : suma solo las tiendas de esa zona.
+    - Con tienda : suma solo esa tienda específica.
+    Incluye tiendas que no tienen movimiento en data.csv.
     """
+    import unicodedata, re
+
+    def norm(s):
+        s = str(s).strip().upper()
+        s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+        return re.sub(r'\s+', ' ', s)
+
     df_auth = load_autorizacion()
     if df_auth.empty:
         return 0
@@ -197,7 +214,14 @@ def get_personal_autorizado(mes: str, año: int) -> int:
     resultado = df_auth[
         (df_auth['MES'] == mes) &
         (df_auth['AÑO'] == int(año))
-    ]
+    ].copy()
+
+    if zona_sel and zona_sel != 'TODAS':
+        resultado = resultado[resultado['ZONA'] == zona_sel]
+
+    if tienda_sel and tienda_sel != 'TODAS':
+        resultado = resultado[resultado['_TIENDA'] == norm(tienda_sel)]
+
     return int(resultado['PLAZAS_AUTORIZADAS_ORIG'].sum())
 
 def parse_pct(series):
@@ -644,8 +668,10 @@ st.markdown("#### 👥 Datos Generales")
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("🏪 Nº Tiendas",            f"{num_tiendas:,}")
 
-# Personal autorizado — total puro del CSV de autorización para el período
-_pers_aut = get_personal_autorizado(mes, int(año))
+# Personal autorizado — respeta filtros de zona y tienda del sidebar
+_pers_aut = get_personal_autorizado(mes, int(año),
+                                     zona_sel=zona_sel,
+                                     tienda_sel=tienda_sel)
 _vacantes = _pers_aut - total_act
 
 k2.metric("✅ Personal Autorizado",
