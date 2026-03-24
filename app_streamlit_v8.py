@@ -50,9 +50,10 @@ CHART_COLORS = ['#1e3c72', '#6e6e6e', '#7fa8e0', '#8a8a8a', '#5a5a5a', '#4a4a4a'
 # CONFIGURACIÓN DE RUTAS
 # ==========================
 import os
-CSV_PATH      = os.environ.get('CSV_PATH', 'data/data.csv')
-NOMINA_PATH   = os.environ.get('NOMINA_PATH', 'data/CONSOLIDADO_NOMINA.csv')
-GEOJSON_PATH  = os.environ.get('GEODATA_PATH', 'geodata')
+CSV_PATH          = os.environ.get('CSV_PATH', 'data/data.csv')
+NOMINA_PATH       = os.environ.get('NOMINA_PATH', 'data/CONSOLIDADO_NOMINA.csv')
+AUTORIZACION_PATH = os.environ.get('AUTORIZACION_PATH', 'data/AUTORIZACION.csv')
+GEOJSON_PATH      = os.environ.get('GEODATA_PATH', 'geodata')
 
 # ==========================
 # ESTILOS CSS PERSONALIZADOS
@@ -109,49 +110,70 @@ MES_ORDEN = {
     '09. SEPTIEMBRE': 9, '10. OCTUBRE': 10, '11. NOVIEMBRE': 11, '12. DICIEMBRE': 12
 }
 
-# ==========================
-# PERSONAL AUTORIZADO POR MES Y AÑO
-# Editar manualmente esta tabla para actualizar la dotación autorizada.
-# Formato: {'MES': '01. ENERO', 'AÑO': 2025, 'PERSONAL_AUTORIZADO': 500}
-# ==========================
-_DOTACION_RAW = [
-    # ── 2025 ──────────────────────────────────────────
-    {'MES': '01. ENERO',        'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '02. FEBRERO',      'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '03. MARZO',        'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '04. ABRIL',        'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '05. MAYO',         'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '06. JUNIO',        'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '07. JULIO',        'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '08. AGOSTO',       'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '09. SEPTIEMBRE',   'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '10. OCTUBRE',      'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '11. NOVIEMBRE',    'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '12. DICIEMBRE',    'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
-    # ── 2026 ──────────────────────────────────────────
-    {'MES': '01. ENERO',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 1283},
-    {'MES': '02. FEBRERO',      'AÑO': 2026, 'PERSONAL_AUTORIZADO': 1042},
-    {'MES': '03. MARZO',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '04. ABRIL',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '05. MAYO',         'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '06. JUNIO',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '07. JULIO',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '08. AGOSTO',       'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '09. SEPTIEMBRE',   'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '10. OCTUBRE',      'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '11. NOVIEMBRE',    'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '12. DICIEMBRE',    'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
-]
-DF_DOTACION = pd.DataFrame(_DOTACION_RAW)
+# Mapeo MES plano → formato data.csv (usado por load_autorizacion)
+_MES_AUTH_MAP = {
+    'ENERO': '01. ENERO', 'FEBRERO': '02. FEBRERO', 'MARZO': '03. MARZO',
+    'ABRIL': '04. ABRIL', 'MAYO': '05. MAYO', 'JUNIO': '06. JUNIO',
+    'JULIO': '07. JULIO', 'AGOSTO': '08. AGOSTO', 'SEPTIEMBRE': '09. SEPTIEMBRE',
+    'OCTUBRE': '10. OCTUBRE', 'NOVIEMBRE': '11. NOVIEMBRE', 'DICIEMBRE': '12. DICIEMBRE',
+}
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_autorizacion():
+    """
+    Carga AUTORIZACION.csv y retorna un DataFrame con PLAZAS_AUTORIZADAS_ORIG
+    sumadas por (_KEY, MES, AÑO), donde:
+      - _KEY  = CENTRO DE COSTOS normalizado (sin tildes, strip, upper)
+      - MES   = convertido a formato '01. ENERO' para coincidir con data.csv
+      - AÑO   = int
+    Join con data.csv: _KEY ↔ NOM CCOSTO normalizado.
+    """
+    import unicodedata
+
+    def norm(s):
+        s = str(s).strip().upper()
+        return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+
+    for path in [AUTORIZACION_PATH, 'AUTORIZACION.csv']:
+        try:
+            df = pd.read_csv(path, encoding='utf-8-sig', sep=None, engine='python')
+            break
+        except FileNotFoundError:
+            continue
+    else:
+        return pd.DataFrame(columns=['_KEY', 'MES', 'AÑO', 'PLAZAS_AUTORIZADAS_ORIG'])
+
+    df.columns = df.columns.str.strip().str.upper()
+
+    df['_KEY'] = df['CENTRO DE COSTOS'].apply(norm)
+    df['MES']  = (df['MES'].astype(str).str.strip().str.upper()
+                  .map(_MES_AUTH_MAP)
+                  .fillna(df['MES'].astype(str).str.strip().str.upper()))
+    df['AÑO']  = pd.to_numeric(df['AÑO'], errors='coerce').astype('Int64')
+    df['PLAZAS_AUTORIZADAS_ORIG'] = pd.to_numeric(
+        df['PLAZAS AUTORIZADAS ORIG'].astype(str)
+          .str.replace(',', '.', regex=False)
+          .str.strip(),
+        errors='coerce'
+    ).fillna(0)
+
+    return (
+        df.groupby(['_KEY', 'MES', 'AÑO'], dropna=False)['PLAZAS_AUTORIZADAS_ORIG']
+        .sum()
+        .reset_index()
+    )
+
 
 def get_personal_autorizado(mes: str, año: int) -> int:
-    """Retorna el personal autorizado para un mes/año dado. 0 si no está definido."""
-    fila = DF_DOTACION[
-        (DF_DOTACION['MES'] == mes) & (DF_DOTACION['AÑO'] == año)
-    ]
-    if fila.empty:
+    """
+    Suma PLAZAS_AUTORIZADAS_ORIG de todos los centros de costo
+    para el mes/año dado. Retorna 0 si no hay datos.
+    """
+    df_auth = load_autorizacion()
+    if df_auth.empty:
         return 0
-    return int(fila['PERSONAL_AUTORIZADO'].iloc[0])
+    fila = df_auth[(df_auth['MES'] == mes) & (df_auth['AÑO'] == año)]
+    return int(fila['PLAZAS_AUTORIZADAS_ORIG'].sum())
 
 def parse_pct(series):
     """Convierte '12,34 %' → 12.34 (float)."""
@@ -250,11 +272,6 @@ def load_csv():
             df['AUS_MEDICO'] = df['COLOR_AUS_MED'].apply(
                 lambda x: 1 if str(x) != '#37A794' and pd.notna(x) else 0
             )
-
-        # TOTAL_AUSENTISMO = suma real de los 3 tipos (reemplaza CONT_TOTAL)
-        aus_cols_presentes = [c for c in ['AUS_MEDICO', 'AUS_LEG', 'AUS_ADMINISTRATIVO'] if c in df.columns]
-        if aus_cols_presentes:
-            df['TOTAL_AUSENTISMO'] = df[aus_cols_presentes].sum(axis=1)
 
         df['AÑO'] = pd.to_numeric(df['AÑO'], errors='coerce').astype('Int64')
         df['MES'] = df['MES'].astype(str).str.strip().str.upper()
@@ -468,10 +485,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("#### ⚠️ Indicadores Críticos")
     st.metric("🔄 Rotaciones",  f"{int(df['RETIROS'].sum()):,}")
-    _aus_s = int((df['AUS_ADMINISTRATIVO'].sum() if 'AUS_ADMINISTRATIVO' in df.columns else 0) +
-                 (df['AUS_LEG'].sum() if 'AUS_LEG' in df.columns else 0) +
-                 (df['AUS_MEDICO'].sum() if 'AUS_MEDICO' in df.columns else 0))
-    st.metric("😷 Ausentismo",  f"{_aus_s:,}")
+    st.metric("😷 Ausentismo",  f"{int(df['TOTAL_AUSENTISMO'].sum()):,}")
     st.metric("🚑 Accidentes",  f"{int(df['TOTAL_ACCIDENTES'].sum()):,}")
     st.metric("📅 Días ausencia", f"{int(df['DIAS_AUSENCIA'].sum()):,}")
 
@@ -586,13 +600,13 @@ st.markdown("### 📈 Indicadores de Recursos Humanos")
 
 total_act   = int(df_f['TOTAL_ACTIVOS'].sum())
 total_rot   = int(df_f['RETIROS'].sum())
-aus_admin   = int(df_f['AUS_ADMINISTRATIVO'].sum()) if 'AUS_ADMINISTRATIVO' in df_f.columns else 0
-aus_leg     = int(df_f['AUS_LEG'].sum()) if 'AUS_LEG' in df_f.columns else 0
-aus_med     = int(df_f['AUS_MEDICO'].sum()) if 'AUS_MEDICO' in df_f.columns else 0
-total_aus   = aus_admin + aus_leg + aus_med   # suma real de los 3 tipos
+total_aus   = int(df_f['TOTAL_AUSENTISMO'].sum())
 total_acc   = int(df_f['TOTAL_ACCIDENTES'].sum())
 total_dias  = int(df_f['DIAS_AUSENCIA'].sum())
 num_tiendas = int(df_f['ALMACEN'].nunique())
+aus_admin   = int(df_f['AUS_ADMINISTRATIVO'].sum()) if 'AUS_ADMINISTRATIVO' in df_f.columns else 0
+aus_leg     = int(df_f['AUS_LEG'].sum()) if 'AUS_LEG' in df_f.columns else 0
+aus_med     = int(df_f['AUS_MEDICO'].sum()) if 'AUS_MEDICO' in df_f.columns else 0
 dias_admin  = int(df_f['DIAS_ADMIN'].sum()) if 'DIAS_ADMIN' in df_f.columns else 0
 dias_leg    = int(df_f['DIAS_LEGAL'].sum()) if 'DIAS_LEGAL' in df_f.columns else 0
 dias_med    = int(df_f['DIAS_MEDICO'].sum()) if 'DIAS_MEDICO' in df_f.columns else 0
@@ -602,24 +616,26 @@ st.markdown("#### 👥 Datos Generales")
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("🏪 Nº Tiendas",            f"{num_tiendas:,}")
 
-# Personal autorizado y vacantes
+# Personal autorizado desde AUTORIZACION.csv y cálculo de vacantes
 _pers_aut = get_personal_autorizado(mes, int(año))
 _vacantes  = _pers_aut - total_act
 
-k2.metric("✅ Personal Autorizado",  f"{_pers_aut:,}" if _pers_aut > 0 else "Sin definir")
+k2.metric("✅ Personal Autorizado",
+          f"{_pers_aut:,}" if _pers_aut > 0 else "Sin datos",
+          help="Suma de PLAZAS AUTORIZADAS Orig desde AUTORIZACION.csv")
 k3.metric("👥 Personal Activo",       f"{total_act:,}")
 
 if _pers_aut > 0:
-    _color_vac = "normal" if _vacantes >= 0 else "inverse"
     k4.metric(
         "📋 Vacantes",
         f"{_vacantes:,}",
         delta=f"{'↑' if _vacantes >= 0 else '↓'} {abs(_vacantes):,} vs autorizado",
-        delta_color=_color_vac,
+        delta_color="normal" if _vacantes >= 0 else "inverse",
         help="Personal Autorizado − Personal Activo. Rojo = exceso de personal."
     )
 else:
-    k4.metric("📋 Vacantes", "🚧", help="Define el personal autorizado en DF_DOTACION")
+    k4.metric("📋 Vacantes", "Sin datos",
+              help="No hay plazas autorizadas definidas para este período")
 
 st.markdown("---")
 
@@ -720,7 +736,7 @@ if metas_disponibles:
         }
     if 'META_AUSENTISMO' in metas_disponibles:
         indicadores_meta['Ausentismo Total'] = {
-            'actual': total_aus,   # suma real: admin + leg + med
+            'actual': total_aus,
             'meta_pct': metas_disponibles['META_AUSENTISMO'],
             'meta_cant': round(metas_disponibles['META_AUSENTISMO'] / 100 * activos_base),
             'icon': '😷',
