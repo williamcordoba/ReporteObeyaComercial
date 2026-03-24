@@ -122,17 +122,22 @@ _MES_AUTH_MAP = {
 def load_autorizacion():
     """
     Carga AUTORIZACION.csv y retorna un DataFrame con PLAZAS_AUTORIZADAS_ORIG
-    sumadas por (_KEY, MES, AÑO), donde:
-      - _KEY  = CENTRO DE COSTOS normalizado (sin tildes, strip, upper)
-      - MES   = convertido a formato '01. ENERO' para coincidir con data.csv
-      - AÑO   = int
-    Join con data.csv: _KEY ↔ NOM CCOSTO normalizado.
+    sumadas por (_TIENDA, _CARGO, MES, AÑO), donde:
+      - _TIENDA = CENTRO DE COSTOS normalizado (sin tildes, sin espacios extra)
+      - _CARGO  = NOMBRE DEL CARGO normalizado (sin tildes, espacios internos colapsados)
+      - MES     = convertido a formato '01. ENERO' para coincidir con data.csv
+      - AÑO     = int
+
+    Join con data.csv  : _TIENDA ↔ NOM_CCOSTO  |  _CARGO ↔ NOM_OFICIO
+    Join con nómina.csv: _TIENDA ↔ NOM CCO     |  _CARGO ↔ OFICIO
     """
-    import unicodedata
+    import unicodedata, re
 
     def norm(s):
+        """Strip, upper, quita tildes y colapsa espacios internos múltiples."""
         s = str(s).strip().upper()
-        return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+        s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+        return re.sub(r'\s+', ' ', s)
 
     for path in [AUTORIZACION_PATH, 'AUTORIZACION.csv']:
         try:
@@ -141,54 +146,59 @@ def load_autorizacion():
         except FileNotFoundError:
             continue
     else:
-        return pd.DataFrame(columns=['_KEY', 'MES', 'AÑO', 'PLAZAS_AUTORIZADAS_ORIG'])
+        return pd.DataFrame(columns=['_TIENDA', '_CARGO', 'MES', 'AÑO', 'PLAZAS_AUTORIZADAS_ORIG'])
 
-    df.columns = df.columns.str.strip().str.upper()
+    df.columns = df.columns.str.strip()
 
-    df['_KEY'] = df['CENTRO DE COSTOS'].apply(norm)
-    df['MES']  = (df['MES'].astype(str).str.strip().str.upper()
-                  .map(_MES_AUTH_MAP)
-                  .fillna(df['MES'].astype(str).str.strip().str.upper()))
-    df['AÑO']  = pd.to_numeric(df['AÑO'], errors='coerce').astype('Int64')
+    df['_TIENDA'] = df['CENTRO DE COSTOS'].apply(norm)
+    df['_CARGO']  = df['NOMBRE DEL CARGO'].apply(norm)
+    df['MES']     = (df['MES'].astype(str).str.strip().str.upper()
+                     .map(_MES_AUTH_MAP)
+                     .fillna(df['MES'].astype(str).str.strip().str.upper()))
+    df['AÑO']     = pd.to_numeric(df['AÑO'], errors='coerce').astype('Int64')
     df['PLAZAS_AUTORIZADAS_ORIG'] = pd.to_numeric(
-        df['PLAZAS AUTORIZADAS ORIG'].astype(str)
-          .str.replace(',', '.', regex=False)
-          .str.strip(),
+        df['PLAZAS AUTORIZADAS Orig'].astype(str)
+          .str.replace(',', '.', regex=False).str.strip(),
         errors='coerce'
     ).fillna(0)
 
     return (
-        df.groupby(['_KEY', 'MES', 'AÑO'], dropna=False)['PLAZAS_AUTORIZADAS_ORIG']
+        df.groupby(['_TIENDA', '_CARGO', 'MES', 'AÑO'], dropna=False)['PLAZAS_AUTORIZADAS_ORIG']
         .sum()
         .reset_index()
     )
 
 
-def get_personal_autorizado(mes: str, año: int, almacenes_activos=None) -> int:
+def get_personal_autorizado(mes: str, año: int, almacenes_activos=None, cargos_activos=None) -> int:
     """
-    Suma PLAZAS_AUTORIZADAS_ORIG para el mes/año dado.
-    Si se pasa almacenes_activos (lista de ALMACEN normalizados del df_f filtrado),
-    solo suma las tiendas que están en ese conjunto — respetando zona y tienda seleccionados.
-    Retorna 0 si no hay datos.
+    Suma PLAZAS_AUTORIZADAS_ORIG filtrando por (mes, año) y opcionalmente
+    por las tiendas y cargos presentes en df_f (respeta todos los filtros activos).
+
+    - almacenes_activos : lista de ALMACEN del df_f filtrado (NOM_CCOSTO renombrado)
+    - cargos_activos    : lista de NOM_OFICIO del df_raw_f filtrado
     """
-    import unicodedata
+    import unicodedata, re
 
     def norm(s):
         s = str(s).strip().upper()
-        return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+        s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+        return re.sub(r'\s+', ' ', s)
 
     df_auth = load_autorizacion()
     if df_auth.empty:
         return 0
 
-    fila = df_auth[(df_auth['MES'] == mes) & (df_auth['AÑO'] == año)]
+    mask = (df_auth['MES'] == mes) & (df_auth['AÑO'] == año)
 
     if almacenes_activos is not None:
-        # Normalizar los almacenes del df_f para cruzar con _KEY de autorizacion
-        keys_activos = {norm(a) for a in almacenes_activos}
-        fila = fila[fila['_KEY'].isin(keys_activos)]
+        keys_tienda = {norm(a) for a in almacenes_activos}
+        mask &= df_auth['_TIENDA'].isin(keys_tienda)
 
-    return int(fila['PLAZAS_AUTORIZADAS_ORIG'].sum())
+    if cargos_activos is not None:
+        keys_cargo = {norm(c) for c in cargos_activos}
+        mask &= df_auth['_CARGO'].isin(keys_cargo)
+
+    return int(df_auth.loc[mask, 'PLAZAS_AUTORIZADAS_ORIG'].sum())
 
 def parse_pct(series):
     """Convierte '12,34 %' → 12.34 (float)."""
@@ -631,10 +641,13 @@ st.markdown("#### 👥 Datos Generales")
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("🏪 Nº Tiendas",            f"{num_tiendas:,}")
 
-# Personal autorizado desde AUTORIZACION.csv — respeta filtros de zona y tienda
+# Personal autorizado — filtrado por tienda + cargo + mes + año
 _almacenes_filtrados = df_f['ALMACEN'].dropna().unique().tolist()
-_pers_aut = get_personal_autorizado(mes, int(año), almacenes_activos=_almacenes_filtrados)
-_vacantes  = _pers_aut - total_act
+_cargos_filtrados    = df_raw_f['NOM_OFICIO'].dropna().unique().tolist() if 'NOM_OFICIO' in df_raw_f.columns else None
+_pers_aut = get_personal_autorizado(mes, int(año),
+                                     almacenes_activos=_almacenes_filtrados,
+                                     cargos_activos=_cargos_filtrados)
+_vacantes = _pers_aut - total_act
 
 k2.metric("✅ Personal Autorizado",
           f"{_pers_aut:,}" if _pers_aut > 0 else "Sin datos",
