@@ -129,8 +129,8 @@ _DOTACION_RAW = [
     {'MES': '11. NOVIEMBRE',    'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
     {'MES': '12. DICIEMBRE',    'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
     # ── 2026 ──────────────────────────────────────────
-    {'MES': '01. ENERO',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
-    {'MES': '02. FEBRERO',      'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '01. ENERO',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 1283},
+    {'MES': '02. FEBRERO',      'AÑO': 2026, 'PERSONAL_AUTORIZADO': 1042},
     {'MES': '03. MARZO',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
     {'MES': '04. ABRIL',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
     {'MES': '05. MAYO',         'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
