@@ -134,10 +134,14 @@ def load_autorizacion():
     import unicodedata, re
 
     def norm(s):
-        """Strip, upper, quita tildes y colapsa espacios internos múltiples."""
+        """Strip, upper, quita tildes, colapsa espacios y estandariza
+        sufijos de horas: '36H' → '36 H', '42H' → '42 H', etc."""
         s = str(s).strip().upper()
         s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
-        return re.sub(r'\s+', ' ', s)
+        s = re.sub(r'\s+', ' ', s)
+        # Unificar '36H' → '36 H'  (número pegado a H sin espacio)
+        s = re.sub(r'(\d)(H)\b', r'\1 \2', s)
+        return s
 
     for path in [AUTORIZACION_PATH, 'AUTORIZACION.csv']:
         try:
@@ -182,7 +186,9 @@ def get_personal_autorizado(mes: str, año: int, almacenes_activos=None, cargos_
     def norm(s):
         s = str(s).strip().upper()
         s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
-        return re.sub(r'\s+', ' ', s)
+        s = re.sub(r'\s+', ' ', s)
+        s = re.sub(r'(\d)(H)\b', r'\1 \2', s)
+        return s
 
     df_auth = load_autorizacion()
     if df_auth.empty:
