@@ -581,13 +581,13 @@ cn1, cn2, cn3 = st.columns(3)
 cn1.metric("🎯 Meta",               "🚧")
 if costo_mes > 0:
     cn2.metric("📅 Costo Mes Actual",
-               f"${costo_mes / 1_000_000:.1f}M",
+               f"${costo_mes:,.2f}",
                help="Suma de DEVENGADOS del período seleccionado")
 else:
     cn2.metric("📅 Costo Mes Actual", "Sin datos")
 if costo_acum > 0:
     cn3.metric("📆 Acumulado Año",
-               f"${costo_acum / 1_000_000:.1f}M",
+               f"${costo_acum:,.2f}",
                help=f"Suma de DEVENGADOS todos los meses disponibles en {año}")
 else:
     cn3.metric("📆 Acumulado Año", "Sin datos")
