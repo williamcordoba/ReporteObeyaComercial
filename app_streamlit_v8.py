@@ -133,6 +133,28 @@ def load_autorizacion():
         s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
         return re.sub(r'\s+', ' ', s)
 
+    # Tabla de estandarización: variantes del CSV → nombre canónico de data.csv
+    CARGO_MAP = {
+        'CAJERO(A) 48H':            'CAJERO(A) 48 H',
+        'CAJERO(A) 36H':            'CAJERO(A) 36 H',
+        'STAFF COMERCIAL 47 H':     'STAFF COMERCIAL 48 H',   # error tipográfico en fuente
+        'STAFF DE TIENDA 47H':      'STAFF COMERCIAL 48 H',
+        'STAFF COMERCIAL 48H':      'STAFF COMERCIAL 48 H',
+        'STAFF DE TIENDA 48H':      'STAFF COMERCIAL 48 H',
+        'STAFF COMERCIAL 36H':      'STAFF COMERCIAL 36 H',
+        'STAFF DE TIENDA 36H':      'STAFF COMERCIAL 36 H',
+        'ASESOR(A) DE VENTAS 48H':  'ASESOR(A) DE VENTAS 48 H',
+        'ASESOR(A) DE VENTAS 36H':  'ASESOR(A) DE VENTAS 36 H',
+        'AUXILIAR COMERCIAL 48H':   'AUXILIAR COMERCIAL 48 H',
+        'AUXILIAR COMERCIAL 36H':   'AUXILIAR COMERCIAL 36 H',
+    }
+    # Normalizar las claves del mapa
+    CARGO_MAP_NORM = {norm(k): norm(v) for k, v in CARGO_MAP.items()}
+
+    def norm_cargo(s):
+        n = norm(s)
+        return CARGO_MAP_NORM.get(n, n)
+
     for path in [AUTORIZACION_PATH, 'AUTORIZACION.csv']:
         try:
             df = pd.read_csv(path, encoding='utf-8-sig', sep=None, engine='python')
@@ -145,7 +167,7 @@ def load_autorizacion():
     df.columns = df.columns.str.strip()
 
     df['_TIENDA'] = df['AREA'].apply(norm)
-    df['_CARGO']  = df['NOMBRE DEL CARGO'].apply(norm)
+    df['_CARGO']  = df['NOMBRE DEL CARGO'].apply(norm_cargo)
     df['MES']     = df['MES'].astype(str).str.strip().str.upper()
     df['AÑO']     = pd.to_numeric(df['AÑO'], errors='coerce').astype(int)
     df['PLAZAS_AUTORIZADAS_ORIG'] = pd.to_numeric(
@@ -162,39 +184,20 @@ def load_autorizacion():
     )
 
 
-def get_personal_autorizado(mes: str, año: int, almacenes_activos=None, cargos_activos=None) -> int:
+def get_personal_autorizado(mes: str, año: int) -> int:
     """
-    Suma PLAZAS_AUTORIZADAS_ORIG filtrando por (mes, año) y opcionalmente
-    por las tiendas y cargos presentes en df_f (respeta todos los filtros activos).
-
-    - almacenes_activos : lista de ALMACEN del df_f filtrado (NOM_CCOSTO renombrado)
-    - cargos_activos    : lista de NOM_OFICIO del df_raw_f filtrado
+    Suma PLAZAS_AUTORIZADAS_ORIG para el mes/año dado.
+    Retorna el total puro del CSV de autorización sin ningún filtro adicional,
+    incluyendo todas las tiendas y cargos definidos para ese período.
     """
-    import unicodedata, re
-
-    def norm(s):
-        s = str(s).strip().upper()
-        s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
-        return re.sub(r'\s+', ' ', s)
-
     df_auth = load_autorizacion()
     if df_auth.empty:
         return 0
 
-    # Filtrar en pasos independientes sin mutar (evita problemas con cache de Streamlit)
     resultado = df_auth[
         (df_auth['MES'] == mes) &
         (df_auth['AÑO'] == int(año))
-    ].copy()
-
-    if almacenes_activos is not None:
-        keys_tienda = {norm(a) for a in almacenes_activos}
-        resultado = resultado[resultado['_TIENDA'].isin(keys_tienda)]
-
-    if cargos_activos is not None:
-        keys_cargo = {norm(c) for c in cargos_activos}
-        resultado = resultado[resultado['_CARGO'].isin(keys_cargo)]
-
+    ]
     return int(resultado['PLAZAS_AUTORIZADAS_ORIG'].sum())
 
 def parse_pct(series):
@@ -641,12 +644,8 @@ st.markdown("#### 👥 Datos Generales")
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("🏪 Nº Tiendas",            f"{num_tiendas:,}")
 
-# Personal autorizado — filtrado por tienda + cargo + mes + año
-_almacenes_filtrados = df_f['ALMACEN'].dropna().unique().tolist()
-_cargos_filtrados    = df_raw_f['NOM_OFICIO'].dropna().unique().tolist() if 'NOM_OFICIO' in df_raw_f.columns else None
-_pers_aut = get_personal_autorizado(mes, int(año),
-                                     almacenes_activos=_almacenes_filtrados,
-                                     cargos_activos=_cargos_filtrados)
+# Personal autorizado — total puro del CSV de autorización para el período
+_pers_aut = get_personal_autorizado(mes, int(año))
 _vacantes = _pers_aut - total_act
 
 k2.metric("✅ Personal Autorizado",
