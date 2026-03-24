@@ -109,6 +109,50 @@ MES_ORDEN = {
     '09. SEPTIEMBRE': 9, '10. OCTUBRE': 10, '11. NOVIEMBRE': 11, '12. DICIEMBRE': 12
 }
 
+# ==========================
+# PERSONAL AUTORIZADO POR MES Y AÑO
+# Editar manualmente esta tabla para actualizar la dotación autorizada.
+# Formato: {'MES': '01. ENERO', 'AÑO': 2025, 'PERSONAL_AUTORIZADO': 500}
+# ==========================
+_DOTACION_RAW = [
+    # ── 2025 ──────────────────────────────────────────
+    {'MES': '01. ENERO',        'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '02. FEBRERO',      'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '03. MARZO',        'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '04. ABRIL',        'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '05. MAYO',         'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '06. JUNIO',        'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '07. JULIO',        'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '08. AGOSTO',       'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '09. SEPTIEMBRE',   'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '10. OCTUBRE',      'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '11. NOVIEMBRE',    'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '12. DICIEMBRE',    'AÑO': 2025, 'PERSONAL_AUTORIZADO': 0},
+    # ── 2026 ──────────────────────────────────────────
+    {'MES': '01. ENERO',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '02. FEBRERO',      'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '03. MARZO',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '04. ABRIL',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '05. MAYO',         'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '06. JUNIO',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '07. JULIO',        'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '08. AGOSTO',       'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '09. SEPTIEMBRE',   'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '10. OCTUBRE',      'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '11. NOVIEMBRE',    'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+    {'MES': '12. DICIEMBRE',    'AÑO': 2026, 'PERSONAL_AUTORIZADO': 0},
+]
+DF_DOTACION = pd.DataFrame(_DOTACION_RAW)
+
+def get_personal_autorizado(mes: str, año: int) -> int:
+    """Retorna el personal autorizado para un mes/año dado. 0 si no está definido."""
+    fila = DF_DOTACION[
+        (DF_DOTACION['MES'] == mes) & (DF_DOTACION['AÑO'] == año)
+    ]
+    if fila.empty:
+        return 0
+    return int(fila['PERSONAL_AUTORIZADO'].iloc[0])
+
 def parse_pct(series):
     """Convierte '12,34 %' → 12.34 (float)."""
     return (
@@ -206,6 +250,11 @@ def load_csv():
             df['AUS_MEDICO'] = df['COLOR_AUS_MED'].apply(
                 lambda x: 1 if str(x) != '#37A794' and pd.notna(x) else 0
             )
+
+        # TOTAL_AUSENTISMO = suma real de los 3 tipos (reemplaza CONT_TOTAL)
+        aus_cols_presentes = [c for c in ['AUS_MEDICO', 'AUS_LEG', 'AUS_ADMINISTRATIVO'] if c in df.columns]
+        if aus_cols_presentes:
+            df['TOTAL_AUSENTISMO'] = df[aus_cols_presentes].sum(axis=1)
 
         df['AÑO'] = pd.to_numeric(df['AÑO'], errors='coerce').astype('Int64')
         df['MES'] = df['MES'].astype(str).str.strip().str.upper()
@@ -419,7 +468,10 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("#### ⚠️ Indicadores Críticos")
     st.metric("🔄 Rotaciones",  f"{int(df['RETIROS'].sum()):,}")
-    st.metric("😷 Ausentismo",  f"{int(df['TOTAL_AUSENTISMO'].sum()):,}")
+    _aus_s = int((df['AUS_ADMINISTRATIVO'].sum() if 'AUS_ADMINISTRATIVO' in df.columns else 0) +
+                 (df['AUS_LEG'].sum() if 'AUS_LEG' in df.columns else 0) +
+                 (df['AUS_MEDICO'].sum() if 'AUS_MEDICO' in df.columns else 0))
+    st.metric("😷 Ausentismo",  f"{_aus_s:,}")
     st.metric("🚑 Accidentes",  f"{int(df['TOTAL_ACCIDENTES'].sum()):,}")
     st.metric("📅 Días ausencia", f"{int(df['DIAS_AUSENCIA'].sum()):,}")
 
@@ -534,13 +586,13 @@ st.markdown("### 📈 Indicadores de Recursos Humanos")
 
 total_act   = int(df_f['TOTAL_ACTIVOS'].sum())
 total_rot   = int(df_f['RETIROS'].sum())
-total_aus   = int(df_f['TOTAL_AUSENTISMO'].sum())
-total_acc   = int(df_f['TOTAL_ACCIDENTES'].sum())
-total_dias  = int(df_f['DIAS_AUSENCIA'].sum())
-num_tiendas = int(df_f['ALMACEN'].nunique())
 aus_admin   = int(df_f['AUS_ADMINISTRATIVO'].sum()) if 'AUS_ADMINISTRATIVO' in df_f.columns else 0
 aus_leg     = int(df_f['AUS_LEG'].sum()) if 'AUS_LEG' in df_f.columns else 0
 aus_med     = int(df_f['AUS_MEDICO'].sum()) if 'AUS_MEDICO' in df_f.columns else 0
+total_aus   = aus_admin + aus_leg + aus_med   # suma real de los 3 tipos
+total_acc   = int(df_f['TOTAL_ACCIDENTES'].sum())
+total_dias  = int(df_f['DIAS_AUSENCIA'].sum())
+num_tiendas = int(df_f['ALMACEN'].nunique())
 dias_admin  = int(df_f['DIAS_ADMIN'].sum()) if 'DIAS_ADMIN' in df_f.columns else 0
 dias_leg    = int(df_f['DIAS_LEGAL'].sum()) if 'DIAS_LEGAL' in df_f.columns else 0
 dias_med    = int(df_f['DIAS_MEDICO'].sum()) if 'DIAS_MEDICO' in df_f.columns else 0
@@ -549,9 +601,25 @@ dias_med    = int(df_f['DIAS_MEDICO'].sum()) if 'DIAS_MEDICO' in df_f.columns el
 st.markdown("#### 👥 Datos Generales")
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("🏪 Nº Tiendas",            f"{num_tiendas:,}")
-k2.metric("✅ Personal Autorizado",    "🚧​")
+
+# Personal autorizado y vacantes
+_pers_aut = get_personal_autorizado(mes, int(año))
+_vacantes  = _pers_aut - total_act
+
+k2.metric("✅ Personal Autorizado",  f"{_pers_aut:,}" if _pers_aut > 0 else "Sin definir")
 k3.metric("👥 Personal Activo",       f"{total_act:,}")
-k4.metric("📋 Vacantes",              "🚧​")
+
+if _pers_aut > 0:
+    _color_vac = "normal" if _vacantes >= 0 else "inverse"
+    k4.metric(
+        "📋 Vacantes",
+        f"{_vacantes:,}",
+        delta=f"{'↑' if _vacantes >= 0 else '↓'} {abs(_vacantes):,} vs autorizado",
+        delta_color=_color_vac,
+        help="Personal Autorizado − Personal Activo. Rojo = exceso de personal."
+    )
+else:
+    k4.metric("📋 Vacantes", "🚧", help="Define el personal autorizado en DF_DOTACION")
 
 st.markdown("---")
 
@@ -652,7 +720,7 @@ if metas_disponibles:
         }
     if 'META_AUSENTISMO' in metas_disponibles:
         indicadores_meta['Ausentismo Total'] = {
-            'actual': total_aus,
+            'actual': total_aus,   # suma real: admin + leg + med
             'meta_pct': metas_disponibles['META_AUSENTISMO'],
             'meta_cant': round(metas_disponibles['META_AUSENTISMO'] / 100 * activos_base),
             'icon': '😷',
