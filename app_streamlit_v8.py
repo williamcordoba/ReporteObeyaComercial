@@ -269,24 +269,25 @@ def process_data(df_raw, mes, año):
 
     # ── Join con nómina (DEVENGADOS por almacén) ──────────────────────
     import unicodedata
-    def norm(s):
+    def _norm(s):
         s = str(s).strip().upper()
         return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
 
     try:
         nomina_almacen, _ = load_nomina()
         if not nomina_almacen.empty:
-            df['_ALMACEN_KEY'] = df['ALMACEN'].apply(norm)
-            nomina_almacen['_ALMACEN_KEY'] = nomina_almacen['ALMACEN']  # ya viene normalizado
+            # Clave normalizada en df procesado (ALMACEN ya viene renombrado de load_csv)
+            df['_KEY'] = df['ALMACEN'].apply(_norm)
+            # nomina_almacen ya trae la columna ALMACEN normalizada (viene de load_nomina)
+            nomina_almacen = nomina_almacen.rename(columns={'ALMACEN': '_KEY'})
             nomina_almacen['AÑO'] = nomina_almacen['AÑO'].astype('Int64')
             df = df.merge(
-                nomina_almacen[['_ALMACEN_KEY', 'MES', 'AÑO', 'DEVENGADOS_ALMACEN']],
-                left_on=['_ALMACEN_KEY', 'MES', 'AÑO'],
-                right_on=['_ALMACEN_KEY', 'MES', 'AÑO'],
+                nomina_almacen[['_KEY', 'MES', 'AÑO', 'DEVENGADOS_ALMACEN']],
+                on=['_KEY', 'MES', 'AÑO'],
                 how='left'
             )
             df['DEVENGADOS_ALMACEN'] = df['DEVENGADOS_ALMACEN'].fillna(0)
-            df.drop(columns=['_ALMACEN_KEY'], inplace=True)
+            df.drop(columns=['_KEY'], inplace=True)
     except Exception:
         df['DEVENGADOS_ALMACEN'] = 0
 
@@ -297,21 +298,22 @@ def process_data(df_raw, mes, año):
 @st.cache_data(ttl=600, show_spinner=False)
 def load_nomina():
     """
-    Carga CONSOLIDADO_NOMINA.csv y devuelve un DataFrame agregado con
-    DEVENGADOS sumados por (ALMACEN, MES_NORM, AÑO) y por (OFICIO, MES_NORM, AÑO).
+    Carga CONSOLIDADO_NOMINA.csv y devuelve dos DataFrames agregados con
+    DEVENGADOS sumados por (ALMACEN, MES, AÑO) y por (OFICIO, MES, AÑO).
 
-    Normalización de claves para el join con data.csv:
-      - ALMACEN  ← NOM CCO  (strip + upper + normalizar tildes/espacios)
-      - OFICIO   ← OFICIO   (strip + upper)
-      - MES_NORM ← MES      ('ENERO' → '01. ENERO', etc.)
+    La columna MES ya viene en formato '01. ENERO', igual que data.csv,
+    por lo que el join es directo sin transformación.
+
+    Normalización de claves:
+      - ALMACEN ← NOM CCO  (strip + upper + quitar tildes para robustecer el match)
+      - OFICIO  ← OFICIO   (strip + upper)
     """
-    # Mapeo inverso: nombre plano → formato data.csv
-    MES_NOMINA_MAP = {
-        'ENERO': '01. ENERO', 'FEBRERO': '02. FEBRERO', 'MARZO': '03. MARZO',
-        'ABRIL': '04. ABRIL', 'MAYO': '05. MAYO', 'JUNIO': '06. JUNIO',
-        'JULIO': '07. JULIO', 'AGOSTO': '08. AGOSTO', 'SEPTIEMBRE': '09. SEPTIEMBRE',
-        'OCTUBRE': '10. OCTUBRE', 'NOVIEMBRE': '11. NOVIEMBRE', 'DICIEMBRE': '12. DICIEMBRE',
-    }
+    import unicodedata
+
+    def norm(s):
+        """Strip, upper y elimina tildes/caracteres especiales para join robusto."""
+        s = str(s).strip().upper()
+        return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
 
     try:
         df = pd.read_csv(NOMINA_PATH, encoding='utf-8-sig', sep=';')
@@ -323,35 +325,29 @@ def load_nomina():
 
     df.columns = df.columns.str.strip().str.upper()
 
-    # Normalizar texto para join
-    import unicodedata
-    def norm(s):
-        s = str(s).strip().upper()
-        return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
-
-    df['ALMACEN']  = df['NOM CCO'].apply(norm)
-    df['OFICIO']   = df['OFICIO'].apply(norm)
-    df['MES_NORM'] = df['MES'].str.strip().str.upper().map(MES_NOMINA_MAP)
-    df['AÑO']      = pd.to_numeric(df['AÑO'], errors='coerce').astype('Int64')
+    df['ALMACEN']    = df['NOM CCO'].apply(norm)
+    df['OFICIO']     = df['OFICIO'].apply(norm)
+    df['MES']        = df['MES'].astype(str).str.strip().str.upper()
+    df['AÑO']        = pd.to_numeric(df['AÑO'], errors='coerce').astype('Int64')
     df['DEVENGADOS'] = pd.to_numeric(
         df['DEVENGADOS'].astype(str).str.replace(',', '.', regex=False),
         errors='coerce'
     ).fillna(0)
 
-    # Agregado por almacén
+    # Agregado por almacén + mes + año
     nomina_almacen = (
-        df.groupby(['ALMACEN', 'MES_NORM', 'AÑO'], dropna=False)['DEVENGADOS']
+        df.groupby(['ALMACEN', 'MES', 'AÑO'], dropna=False)['DEVENGADOS']
         .sum()
         .reset_index()
-        .rename(columns={'MES_NORM': 'MES', 'DEVENGADOS': 'DEVENGADOS_ALMACEN'})
+        .rename(columns={'DEVENGADOS': 'DEVENGADOS_ALMACEN'})
     )
 
-    # Agregado por oficio
+    # Agregado por oficio + mes + año
     nomina_oficio = (
-        df.groupby(['OFICIO', 'MES_NORM', 'AÑO'], dropna=False)['DEVENGADOS']
+        df.groupby(['OFICIO', 'MES', 'AÑO'], dropna=False)['DEVENGADOS']
         .sum()
         .reset_index()
-        .rename(columns={'MES_NORM': 'MES', 'DEVENGADOS': 'DEVENGADOS_OFICIO'})
+        .rename(columns={'DEVENGADOS': 'DEVENGADOS_OFICIO'})
     )
 
     return nomina_almacen, nomina_oficio
