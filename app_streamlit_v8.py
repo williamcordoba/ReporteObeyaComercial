@@ -164,15 +164,30 @@ def load_autorizacion():
     )
 
 
-def get_personal_autorizado(mes: str, año: int) -> int:
+def get_personal_autorizado(mes: str, año: int, almacenes_activos=None) -> int:
     """
-    Suma PLAZAS_AUTORIZADAS_ORIG de todos los centros de costo
-    para el mes/año dado. Retorna 0 si no hay datos.
+    Suma PLAZAS_AUTORIZADAS_ORIG para el mes/año dado.
+    Si se pasa almacenes_activos (lista de ALMACEN normalizados del df_f filtrado),
+    solo suma las tiendas que están en ese conjunto — respetando zona y tienda seleccionados.
+    Retorna 0 si no hay datos.
     """
+    import unicodedata
+
+    def norm(s):
+        s = str(s).strip().upper()
+        return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+
     df_auth = load_autorizacion()
     if df_auth.empty:
         return 0
+
     fila = df_auth[(df_auth['MES'] == mes) & (df_auth['AÑO'] == año)]
+
+    if almacenes_activos is not None:
+        # Normalizar los almacenes del df_f para cruzar con _KEY de autorizacion
+        keys_activos = {norm(a) for a in almacenes_activos}
+        fila = fila[fila['_KEY'].isin(keys_activos)]
+
     return int(fila['PLAZAS_AUTORIZADAS_ORIG'].sum())
 
 def parse_pct(series):
@@ -616,8 +631,9 @@ st.markdown("#### 👥 Datos Generales")
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("🏪 Nº Tiendas",            f"{num_tiendas:,}")
 
-# Personal autorizado desde AUTORIZACION.csv y cálculo de vacantes
-_pers_aut = get_personal_autorizado(mes, int(año))
+# Personal autorizado desde AUTORIZACION.csv — respeta filtros de zona y tienda
+_almacenes_filtrados = df_f['ALMACEN'].dropna().unique().tolist()
+_pers_aut = get_personal_autorizado(mes, int(año), almacenes_activos=_almacenes_filtrados)
 _vacantes  = _pers_aut - total_act
 
 k2.metric("✅ Personal Autorizado",
