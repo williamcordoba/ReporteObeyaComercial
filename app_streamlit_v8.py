@@ -745,7 +745,7 @@ else:
     severidad  = 0.0
 acc2.metric("📈 Frecuencia",     f"{frecuencia:.2f}",
             help="Accidentes / Horas trabajadas × 240.000")
-acc3.metric("📉 Severidad",      f"{severidad:.2f}",
+acc3.metric("📉 Severidad",      f"0",
             help="Días de ausencia / Horas trabajadas × 240.000")
 
 st.markdown("---")
