@@ -521,7 +521,10 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("#### ⚠️ Indicadores Críticos")
     st.metric("🔄 Rotaciones",  f"{int(df['RETIROS'].sum()):,}")
-    st.metric("😷 Ausentismo",  f"{int(df['TOTAL_AUSENTISMO'].sum()):,}")
+    _aus_s = int((df['AUS_ADMINISTRATIVO'].sum() if 'AUS_ADMINISTRATIVO' in df.columns else 0) +
+                 (df['AUS_LEG'].sum() if 'AUS_LEG' in df.columns else 0) +
+                 (df['AUS_MEDICO'].sum() if 'AUS_MEDICO' in df.columns else 0))
+    st.metric("😷 Ausentismo",  f"{_aus_s:,}")
     st.metric("🚑 Accidentes",  f"{int(df['TOTAL_ACCIDENTES'].sum()):,}")
     st.metric("📅 Días ausencia", f"{int(df['DIAS_AUSENCIA'].sum()):,}")
 
@@ -636,13 +639,13 @@ st.markdown("### 📈 Indicadores de Recursos Humanos")
 
 total_act   = int(df_f['TOTAL_ACTIVOS'].sum())
 total_rot   = int(df_f['RETIROS'].sum())
-total_aus   = int(df_f['TOTAL_AUSENTISMO'].sum())
-total_acc   = int(df_f['TOTAL_ACCIDENTES'].sum())
-total_dias  = int(df_f['DIAS_AUSENCIA'].sum())
-num_tiendas = int(df_f['ALMACEN'].nunique())
 aus_admin   = int(df_f['AUS_ADMINISTRATIVO'].sum()) if 'AUS_ADMINISTRATIVO' in df_f.columns else 0
 aus_leg     = int(df_f['AUS_LEG'].sum()) if 'AUS_LEG' in df_f.columns else 0
 aus_med     = int(df_f['AUS_MEDICO'].sum()) if 'AUS_MEDICO' in df_f.columns else 0
+total_aus   = aus_admin + aus_leg + aus_med   # suma real de los 3 tipos
+total_acc   = int(df_f['TOTAL_ACCIDENTES'].sum())
+total_dias  = int(df_f['DIAS_AUSENCIA'].sum())
+num_tiendas = int(df_f['ALMACEN'].nunique())
 dias_admin  = int(df_f['DIAS_ADMIN'].sum()) if 'DIAS_ADMIN' in df_f.columns else 0
 dias_leg    = int(df_f['DIAS_LEGAL'].sum()) if 'DIAS_LEGAL' in df_f.columns else 0
 dias_med    = int(df_f['DIAS_MEDICO'].sum()) if 'DIAS_MEDICO' in df_f.columns else 0
@@ -745,7 +748,7 @@ else:
     severidad  = 0.0
 acc2.metric("📈 Frecuencia",     f"{frecuencia:.2f}",
             help="Accidentes / Horas trabajadas × 240.000")
-acc3.metric("📉 Severidad",      f"0",
+acc3.metric("📉 Severidad",      f"{severidad:.2f}",
             help="Días de ausencia / Horas trabajadas × 240.000")
 
 st.markdown("---")
@@ -855,7 +858,9 @@ if metas_disponibles:
                 # Actual por tienda
                 actual_tienda_map = {
                     'Rotación':            int(df_tienda_meta['RETIROS'].sum()),
-                    'Ausentismo Total':    int(df_tienda_meta['TOTAL_AUSENTISMO'].sum()),
+                    'Ausentismo Total':    (int(df_tienda_meta['AUS_ADMINISTRATIVO'].sum()) if 'AUS_ADMINISTRATIVO' in df_tienda_meta.columns else 0) +
+                                           (int(df_tienda_meta['AUS_LEG'].sum()) if 'AUS_LEG' in df_tienda_meta.columns else 0) +
+                                           (int(df_tienda_meta['AUS_MEDICO'].sum()) if 'AUS_MEDICO' in df_tienda_meta.columns else 0),
                     'Aus. Legal':          int(df_tienda_meta['AUS_LEG'].sum()) if 'AUS_LEG' in df_tienda_meta.columns else 0,
                     'Aus. Médico':         int(df_tienda_meta['AUS_MEDICO'].sum()) if 'AUS_MEDICO' in df_tienda_meta.columns else 0,
                     'Aus. Administrativo': int(df_tienda_meta['AUS_ADMINISTRATIVO'].sum()) if 'AUS_ADMINISTRATIVO' in df_tienda_meta.columns else 0,
@@ -882,7 +887,7 @@ if metas_disponibles:
             cols_m = st.columns(len(indicadores_meta))
             nombre_meta_map = {
                 'Rotación':            ('META_ROT_GRAL',           'RETIROS',          None),
-                'Ausentismo Total':    ('META_AUSENTISMO',         'TOTAL_AUSENTISMO',  None),
+                'Ausentismo Total':    ('META_AUSENTISMO',         ['AUS_ADMINISTRATIVO','AUS_LEG','AUS_MEDICO'],  None),
                 'Aus. Legal':          ('META_AUSENTISMO_LEGAL',   'AUS_LEG',           None),
                 'Aus. Médico':         ('META_AUSENTISMO_MEDICO',  'AUS_MEDICO',        None),
                 'Aus. Administrativo': ('META_AUSENTISMO_ADMINITRATIVO', 'AUS_ADMINISTRATIVO', None),
@@ -891,7 +896,10 @@ if metas_disponibles:
                 meta_col, act_col, _ = nombre_meta_map.get(nombre, (None, None, None))
                 meta_pct_zona = df_zona_meta[meta_col].mean() if meta_col and meta_col in df_zona_meta.columns else info['meta_pct']
                 meta_cant_zona = round(meta_pct_zona / 100 * act_zona)
-                actual_z = int(df_zona_meta[act_col].sum()) if act_col and act_col in df_zona_meta.columns else 0
+                if isinstance(act_col, list):
+                    actual_z = sum(int(df_zona_meta[c].sum()) for c in act_col if c in df_zona_meta.columns)
+                else:
+                    actual_z = int(df_zona_meta[act_col].sum()) if act_col and act_col in df_zona_meta.columns else 0
                 superado = actual_z > meta_cant_zona
                 delta_val = actual_z - meta_cant_zona
                 cols_m[i].metric(
