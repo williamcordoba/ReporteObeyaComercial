@@ -170,6 +170,7 @@ def load_autorizacion():
         df.groupby(['_TIENDA', '_CARGO', 'MES', 'AÑO'], dropna=False)['PLAZAS_AUTORIZADAS_ORIG']
         .sum()
         .reset_index()
+        .copy()
     )
 
 
@@ -194,17 +195,21 @@ def get_personal_autorizado(mes: str, año: int, almacenes_activos=None, cargos_
     if df_auth.empty:
         return 0
 
-    mask = (df_auth['MES'] == mes) & (df_auth['AÑO'] == año)
+    # Filtrar en pasos independientes sin mutar (evita problemas con cache de Streamlit)
+    resultado = df_auth[
+        (df_auth['MES'] == mes) &
+        (df_auth['AÑO'].astype(int) == int(año))
+    ].copy()
 
     if almacenes_activos is not None:
         keys_tienda = {norm(a) for a in almacenes_activos}
-        mask &= df_auth['_TIENDA'].isin(keys_tienda)
+        resultado = resultado[resultado['_TIENDA'].isin(keys_tienda)]
 
     if cargos_activos is not None:
         keys_cargo = {norm(c) for c in cargos_activos}
-        mask &= df_auth['_CARGO'].isin(keys_cargo)
+        resultado = resultado[resultado['_CARGO'].isin(keys_cargo)]
 
-    return int(df_auth.loc[mask, 'PLAZAS_AUTORIZADAS_ORIG'].sum())
+    return int(resultado['PLAZAS_AUTORIZADAS_ORIG'].sum())
 
 def parse_pct(series):
     """Convierte '12,34 %' → 12.34 (float)."""
