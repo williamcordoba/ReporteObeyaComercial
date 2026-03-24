@@ -517,8 +517,47 @@ with st.sidebar:
     años = sorted(df_raw['AÑO'].dropna().unique().tolist(), reverse=True)
     año  = st.selectbox("Año",  años, index=0, key="año_select")
 
+    # Filtro de tipo de contrato — debe resolverse ANTES de process_data
+    st.markdown("#### 📄 Tipo de Contrato")
+    CONTRATO_MAP = {
+        'OBRA O LABOR': [
+            'OBRA LABOR C OPERATIVO',
+            'OBRA O LABOR AD/PRO/LOG',
+            'OBRA O LABOR C OPERATIVO TEMPO',
+        ],
+        'TERMINO INDEFINIDO': [
+            'TERMINO INDEFINIDO C OPERATIVO',
+            'TERMINO INDEFINIDO COMERCIAL',
+        ],
+        'TERMINO FIJO': [
+            'FIJO A 3 MESES COMERCIAL',
+            'FIJO 6 MESES COMERCIAL',
+            'FIJO 6 MESES C OPERATIVO',
+            'FIJO OPERATIVO FINSEMANERO',
+            'TERMINO FIJO ADMON/PRO/LOG 6',
+        ],
+    }
+    tipo_contrato_opciones = ['TODOS'] + list(CONTRATO_MAP.keys())
+    contrato_tipo_sel = st.multiselect(
+        "Contrato",
+        options=tipo_contrato_opciones,
+        default=['TODOS'],
+        key="contrato_tipo_sel"
+    )
+    if not contrato_tipo_sel or 'TODOS' in contrato_tipo_sel:
+        contrato_sel = list({v for vals in CONTRATO_MAP.values() for v in vals})
+        filtrar_contrato = False
+    else:
+        contrato_sel = [v for t in contrato_tipo_sel for v in CONTRATO_MAP.get(t, [])]
+        filtrar_contrato = True
+
     with st.spinner('🔄 Procesando datos...'):
-        df = process_data(df_raw, mes, int(año))
+        # Filtrar df_raw por contrato ANTES de agregar → todos los KPIs reflejan la selección
+        if filtrar_contrato and 'TIPO_CONTRATO' in df_raw.columns:
+            df_raw_contrato = df_raw[df_raw['TIPO_CONTRATO'].isin(contrato_sel)].copy()
+        else:
+            df_raw_contrato = df_raw
+        df = process_data(df_raw_contrato, mes, int(año))
 
     if df.empty:
         st.warning(f"⚠️ No hay datos para **{mes} {año}**. Selecciona otro período.")
@@ -552,39 +591,6 @@ with st.sidebar:
     st.markdown("#### 🏪 Filtro de Tiendas")
     tiendas = ['TODAS'] + sorted(df['ALMACEN'].dropna().unique().tolist())
     tienda_sel = st.selectbox("Tienda/CCosto", tiendas, key="tienda_select")
-
-    # Filtro de tipo de contrato
-    st.markdown("#### 📄 Tipo de Contrato")
-    CONTRATO_MAP = {
-        'OBRA O LABOR': [
-            'OBRA LABOR C OPERATIVO',
-            'OBRA O LABOR AD/PRO/LOG',
-            'OBRA O LABOR C OPERATIVO TEMPO',
-        ],
-        'TERMINO INDEFINIDO': [
-            'TERMINO INDEFINIDO C OPERATIVO',
-            'TERMINO INDEFINIDO COMERCIAL',
-        ],
-        'TERMINO FIJO': [
-            'FIJO A 3 MESES COMERCIAL',
-            'FIJO 6 MESES COMERCIAL',
-            'FIJO 6 MESES C OPERATIVO',
-            'FIJO OPERATIVO FINSEMANERO',
-            'TERMINO FIJO ADMON/PRO/LOG 6',
-        ],
-    }
-    tipo_contrato_opciones = ['TODOS'] + list(CONTRATO_MAP.keys())
-    contrato_tipo_sel = st.multiselect(
-        "Contrato",
-        options=tipo_contrato_opciones,
-        default=['TODOS'],
-        key="contrato_tipo_sel"
-    )
-    # Resolver los contratos reales seleccionados
-    if not contrato_tipo_sel or 'TODOS' in contrato_tipo_sel:
-        contrato_sel = list({v for vals in CONTRATO_MAP.values() for v in vals})
-    else:
-        contrato_sel = [v for t in contrato_tipo_sel for v in CONTRATO_MAP.get(t, [])]
 
     st.markdown("#### 🚨 Filtros de Alerta")
     mostrar_alertas = st.checkbox("🔔 Solo tiendas con alertas", value=False)
@@ -637,13 +643,11 @@ if df_f.empty:
     st.stop()
 
 # Filtrar df_raw para secciones que usan datos crudos
-df_raw_f = df_raw[(df_raw['MES'] == mes) & (df_raw['AÑO'] == año)].copy()
+df_raw_f = df_raw_contrato[(df_raw_contrato['MES'] == mes) & (df_raw_contrato['AÑO'] == año)].copy()
 if zona_seleccionada != "TODAS":
     df_raw_f = df_raw_f[df_raw_f['ZONA'] == zona_seleccionada]
 if tienda_sel != 'TODAS':
     df_raw_f = df_raw_f[df_raw_f['ALMACEN'] == tienda_sel]
-if contrato_sel and 'TIPO_CONTRATO' in df_raw_f.columns:
-    df_raw_f = df_raw_f[df_raw_f['TIPO_CONTRATO'].isin(contrato_sel)]
 
 # ==========================
 # KPIs PRINCIPALES - INDICADORES DE RECURSOS HUMANOS
@@ -1204,7 +1208,7 @@ with tab4:
 with tab5:
     st.markdown("#### 📈 Evolución Mensual (todos los períodos disponibles)")
 
-    df_trend = df_raw.copy() if zona_seleccionada == "TODAS" else df_raw[df_raw['ZONA'] == zona_seleccionada].copy()
+    df_trend = df_raw_contrato.copy() if zona_seleccionada == "TODAS" else df_raw_contrato[df_raw_contrato['ZONA'] == zona_seleccionada].copy()
 
     trend = df_trend.groupby(['MES','AÑO']).agg(
         TOTAL_ACTIVOS=('TOTAL_ACTIVOS','sum'),
